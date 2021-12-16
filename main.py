@@ -1,33 +1,46 @@
 from binance import Client
 from binance import ThreadedWebsocketManager as t_ws
-from binance import BinanceSocketManager as bs
 from binance.exceptions import BinanceAPIException
 from binance.enums import *
 from collections import deque
 from threading import Thread as T
+import argparse, sys
+from arguments import Argument
 
+from log import logbook
 from parameters import *
 from trade import *
 
-client = Client(API_KEY, API_SECRET, testnet=True)
-# symbol = "btcusdt@bookTicker"
-symbol = "BTCUSDT"
+logger = logbook()
+
+parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
+parser.add_argument('-s', '--symbol', help='str, Pair for trading e.g. "-s BTCUSDT"')
+parser.add_argument('-a', '--amount', default=50, help='float, Amount in USDT to trade e.g. "-a 50"')
+parser.add_argument('-ps', '--pivotstep', default=5, type=int, help='int, Left/Right candle count to calculate Pivot e.g. "-ps 5"')
+parser.add_argument('-d', '--delta', default=0, type=float, help='float, delta to determine trend e.g. "-d 10.0"')
+parser.add_argument('-dsl', '--deltasl', default=0.05, type=float, help='float, delta SL to calculate with HH, LL. its value is percentage e.g. "-dsl 0.0005"')
+parser.add_argument('-dt', '--deltatrigger', default=0.15, type=float, help='float, delta percent to calculate trigger open order. its value is percentage e.g. "-dt 0.15"')
+parser.add_argument('-sl', '--stoploss', default=0.45, nargs="?", const=True, type=float, help='float, Percentage Stop loss from your input USDT amount "-sl 0.45" ')
+parser.add_argument('-test', '--testnet',  action="store_true", help='Run script in testnet or live mode.')
+args = parser.parse_args()
 
 class HandleCandle():
     def __init__(self):
-        self.PivotStep = 5
+        self.Symbol = args.symbol
+        self.PivotStep = args.pivotstep # Default is 5
         self.MaxlenKlines = self.PivotStep*2 + 1
         self.Klines = deque(maxlen=self.MaxlenKlines)
         self.HighPivot = deque(maxlen=2)
         self.LowPivot = deque(maxlen=2)
         self.NextPivot = "None"
         self.Trend = "None"
-        self.Delta = 10
-        self.DeltaSL = 0.0005
+        self.Delta = args.delta # Default is 10
+        self.DeltaSL = args.deltasl # Default is 0.05
         self.PricePrecision = 1
         self.QtyPrecision = 1
-        self.DeltaPercent = 0.08
-        self.AmountPerTrade = 50
+        self.DeltaTrigger = args.deltatrigger # Default is 0.15
+        self.AmountPerTrade = args.amount # Default is 50
+        self.StopLoss = args.stoploss # Default is 0.45
         self.LongAvgPrice = 0
         self.ShortAvgPrice = 0
         self.LongOrderID = None
@@ -36,12 +49,16 @@ class HandleCandle():
         self.ShortPosition = False
         self.LastHighForLong = 0
         self.LastLowForShort = 0
-        print("==============Class init===================")
+        self.client = self.create_client()
+        logger.info_magenta("HandleCandle Class initializing...")
         self.prepare_before_processing()
         self.get_precision()
-        
+    def create_client(self):
+        if args.testnet: return Client(TEST_API_KEY, TEST_API_SECRET, testnet=True)
+        return Client(API_KEY, API_SECRET)
+            
     def prepare_before_processing(self):
-        res = client.futures_klines(symbol=symbol, interval=KLINE_INTERVAL_1MINUTE)
+        res = self.client.futures_klines(symbol=self.Symbol, interval=KLINE_INTERVAL_1MINUTE)
         length = len(res)
         i = 0
         Klines = deque(maxlen=self.MaxlenKlines)
@@ -104,15 +121,15 @@ class HandleCandle():
         self.HighPivot = HighPivot
         self.LowPivot = LowPivot
     def get_precision(self):
-        info = client.futures_exchange_info()
+        info = self.client.futures_exchange_info()
         for x in info["symbols"]:
-            if x["symbol"] == symbol:
+            if x["symbol"] == self.Symbol:
                 self.PricePrecision = int(x["pricePrecision"])
                 self.QtyPrecision = int(x["quantityPrecision"])
     def handle_kline_msg(self, msg):
         Info = msg["k"]
         Closed = Info["x"]
-        print("==============Closed===================", Closed)
+        logger.info("The current candle's closed is " + str(Closed))
         if Closed == True:
             self.Klines.append({
                 "Open": Info["o"],
@@ -122,7 +139,6 @@ class HandleCandle():
                 })
             self.calculate_pivot_high_low()
     def calculate_pivot_high_low(self):
-        print(len(self.Klines))
         if len(self.Klines) == self.MaxlenKlines:
             Kline = self.Klines[self.PivotStep]
             Open = float(Kline["Open"])
@@ -173,9 +189,6 @@ class HandleCandle():
                         self.NextPivot = "High"
         self.check_up_down_trend()
     def check_up_down_trend(self):
-        print("========check_up_down_trend======>>>", self.Trend)
-        print("========len(self.LowPivot)======>>>", len(self.LowPivot))
-        print("========len(self.HighPivot)======>>>", len(self.HighPivot))
         # Check high/low pivots length is max length
         if len(self.LowPivot) == 2 and len(self.HighPivot) == 2:
             # Get last two low/high pivots
@@ -183,65 +196,61 @@ class HandleCandle():
             LowP1 = self.LowPivot[1]
             HighP0 = self.HighPivot[0]
             HighP1 = self.HighPivot[1]
-            print("========LowP0======>>>", LowP0)
-            print("========LowP1======>>>", LowP1)
-            print("========HighP0======>>>", HighP0)
-            print("========HighP1======>>>", HighP1)
             DeltaHigh = abs(HighP1 - HighP0)
             DeltaLow = abs(LowP1 - LowP0)
             if DeltaHigh > self.Delta or DeltaLow > self.Delta:
                 if LowP1 > LowP0 and HighP1 > HighP0: # Strong Uptrend
-                    print("Condition 1: Up")
                     self.Trend = "Up"
                 elif LowP1 >= LowP0 and HighP0 > HighP1 and self.NextPivot == "High": # In downtrend, appear new HL
-                    print("Condition 2: Up")
                     self.Trend = "Up"
                 elif LowP0 > LowP1 and HighP1 >= HighP0 and self.NextPivot == "Low": # In downtrend, appear new HH
-                    print("Condition 3: Up")
                     self.Trend = "Up"
                 elif HighP0 > HighP1 and LowP0 > LowP1: # Strong Downtrend
-                    print("Condition 4: Down")
                     self.Trend = "Down"
                 elif HighP1 > HighP0 and LowP0 >= LowP1 and self.NextPivot == "High": # In uptrend, appear new LL
-                    print("Condition 5: Down")
                     self.Trend = "Down"
                 elif HighP0 >= HighP1 and LowP1 > LowP0 and self.NextPivot == "Low": # In uptrend, appear new LH
-                    print("Condition 6: Down")
                     self.Trend = "Down"
             else:
                 self.Trend = "None"
-                print("Condition 7: None")
             self.handle_order()
     def handle_order(self):
-        print("handle_order: ", self.Trend)
+        logger.info_blue("The Trend is " + self.Trend)
         if self.Trend == "Up":
-            # There should be no any long position
-            if self.LongOrderID == None and self.LongPosition == False:
+            if self.LongOrderID == None:
                 LastPivotLow = self.LowPivot[1]
                 LastCandle = self.Klines[-1]
                 LastHigh = float(LastCandle["High"])
                 LastLow = float(LastCandle["Low"])
+                if self.LongPosition == True: # If there is the long position opened and no stop order
+                    LastPivotLow = float(round(LastPivotLow - LastPivotLow * self.DeltaSL / 100, self.PricePrecision))
+                    StopPrice = float(round(LastLow - LastLow * self.StopLoss / 100, self.PricePrecision))
+                    StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
+                    NewStopOrder = Trade(args).close_long_stop_market(StopPrice)
+                    if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
+                        self.LongOrderID = NewStopOrder["orderId"]
+                else: # There is no any long position and stop order.
 
-                # If the last candle low price is greater than last pivot low, continue.(confirming it is still uptrend)
-                if LastLow >= LastPivotLow:
-                    TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaPercent / 100, self.PricePrecision))
-                    Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                    NewOrder = open_long_stop_market(symbol, Amount, TriggerPrice)
-                    if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
-                        self.LongOrderID = NewOrder["orderId"]
-                        self.LastHighForLong = LastHigh # Need for next moving SL
+                    # If the last candle low price is greater than last pivot low, continue.(confirming it is still uptrend)
+                    if LastLow >= LastPivotLow:
+                        TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
+                        Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
+                        NewOrder = Trade(args).open_long_stop_market(Amount, TriggerPrice)
+                        if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
+                            self.LongOrderID = NewOrder["orderId"]
+                            self.LastHighForLong = LastHigh # Need for next moving SL
             elif self.LongOrderID:
-                res = client.futures_get_order(symbol=symbol, orderId=self.LongOrderID)
+                res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.LongOrderID)
                 if self.LongPosition == False:
                     # If order is filled, create new open long order
                     if res["status"] == "FILLED":
                         self.LongPosition = True
-                        LastPivotLow = float(round(self.LowPivot[1] - self.LowPivot[1] * self.DeltaSL, self.PricePrecision))
+                        LastPivotLow = float(round(self.LowPivot[1] - self.LowPivot[1] * self.DeltaSL / 100, self.PricePrecision))
                         avgPrice = float(res["avgPrice"])
                         self.LongAvgPrice = avgPrice
-                        StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * 0.45 / 100, self.PricePrecision))
+                        StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
-                        StopOrder = close_long_stop_market(symbol, StopPrice)
+                        StopOrder = Trade(args).close_long_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.LongOrderID = StopOrder["orderId"]
                     elif res["status"] == "NEW": # Still no filled, Move Stop Trigger
@@ -254,19 +263,19 @@ class HandleCandle():
                         if LastLow >= LastPivotLow:
                             if self.LastHighForLong > LastHigh:
                                 # Cancel Original Open Long Order
-                                OriginalOrder = cancel_order(symbol, self.LongOrderID)
+                                OriginalOrder = Trade(args).cancel_order(self.LongOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.LongOrderID = None
                                     self.LastHighForLong = 0
-                                    TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaPercent / 100, self.PricePrecision))
+                                    TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = open_long_stop_market(symbol, Amount, TriggerPrice)
+                                    NewOrder = Trade(args).open_long_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.LongOrderID = NewOrder["orderId"]
                                         self.LastHighForLong = LastHigh
                         else:
                             # Cancel Original Open Long Order
-                            OriginalOrder = cancel_order(symbol, self.LongOrderID)
+                            OriginalOrder = Trade(args).cancel_order(self.LongOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.LongOrderID = None
                                 self.LastHighForLong = 0
@@ -282,48 +291,56 @@ class HandleCandle():
                         self.LastHighForLong = 0
                     elif res["status"] == "NEW": # Move Stop Loss
                         # Cancel Original Close Stop Order
-                        OriginalOrder = cancel_order(symbol, self.LongOrderID)
+                        OriginalOrder = Trade(args).cancel_order(self.LongOrderID)
                         if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                             self.LongOrderID = None
-                            LastPivotLow = float(round(self.LowPivot[1] - self.LowPivot[1] * self.DeltaSL, self.PricePrecision))
-                            StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * 0.45 / 100, self.PricePrecision))
+                            LastPivotLow = float(round(self.LowPivot[1] - self.LowPivot[1] * self.DeltaSL / 100, self.PricePrecision))
+                            StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
                             StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
-                            NewStopOrder = close_long_stop_market(symbol, StopPrice)
+                            NewStopOrder = Trade(args).close_long_stop_market(StopPrice)
                             if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                                 self.LongOrderID = NewStopOrder["orderId"]
             if self.ShortOrderID != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
-                CloseOpenShort = cancel_order(symbol, self.ShortOrderID)
+                CloseOpenShort = Trade(args).cancel_order(self.ShortOrderID)
                 if CloseOpenShort != None and CloseOpenShort["orderId"] and CloseOpenShort["status"] == "CANCELED":
                     self.ShortOrderID = None
                     self.LastLowForShort = 0
         if self.Trend == "Down":
-            # If no any shot position
-            if self.ShortOrderID == None and self.ShortPosition == False:
+            # If there is the opened position and no stop order.
+            if self.ShortOrderID == None:
                 LastPivotHigh = self.HighPivot[1]
                 LastCandle = self.Klines[-1]
                 LastHigh = float(LastCandle["High"])
                 LastLow = float(LastCandle["Low"])
+                if self.ShortPosition == True: # There is short position without Stop Order
+                    LastPivotHigh = float(round(LastPivotHigh + LastPivotHigh * self.DeltaSL / 100, self.PricePrecision))
+                    StopPrice = float(round(LastHigh + LastHigh * self.StopLoss / 100, self.PricePrecision))
+                    StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
+                    NewStopOrder = Trade(args).close_short_stop_market(StopPrice)
+                    if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
+                        self.ShortOrderID = NewStopOrder["orderId"]
+                else: # There is no any position, order
 
-                # If the last candle high price is less than last pivot high, continue.(confirming it is still downtrend)
-                if LastPivotHigh >= LastHigh:
-                    TriggerPrice = float(round(LastLow - LastLow * self.DeltaPercent / 100, self.PricePrecision))
-                    Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                    NewOrder = open_short_stop_market(symbol, Amount, TriggerPrice)
-                    if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
-                        self.ShortOrderID = NewOrder["orderId"]
-                        self.LastLowForShort = LastLow
+                    # If the last candle high price is less than last pivot high, continue.(confirming it is still downtrend)
+                    if LastPivotHigh >= LastHigh:
+                        TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
+                        Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
+                        NewOrder = Trade(args).open_short_stop_market(Amount, TriggerPrice)
+                        if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
+                            self.ShortOrderID = NewOrder["orderId"]
+                            self.LastLowForShort = LastLow
             elif self.ShortOrderID:
-                res = client.futures_get_order(symbol=symbol, orderId=self.ShortOrderID)
+                res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.ShortOrderID)
                 if self.ShortPosition == False:
                     # If order is filled, create new close short order
                     if res["status"] == "FILLED":
                         self.ShortPosition = True
-                        LastPivotHigh = float(round(self.HighPivot[1] + self.HighPivot[1] * self.DeltaSL, self.PricePrecision))
+                        LastPivotHigh = float(round(self.HighPivot[1] + self.HighPivot[1] * self.DeltaSL / 100, self.PricePrecision))
                         avgPrice = float(res["avgPrice"])
                         self.ShortAvgPrice = avgPrice
-                        StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * 0.45 / 100, self.PricePrecision))
+                        StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
-                        StopOrder = close_short_stop_market(symbol, StopPrice)
+                        StopOrder = Trade(args).close_short_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.ShortOrderID = StopOrder["orderId"]
                     elif res["status"] == "NEW": # Still no filled, Move Stop Trigger
@@ -336,19 +353,19 @@ class HandleCandle():
                         if LastPivotHigh >= LastHigh:
                             if LastLow > self.LastLowForShort:
                                 # Cancel Original Stop Order
-                                OriginalOrder = cancel_order(symbol, self.ShortOrderID)
+                                OriginalOrder = Trade(args).cancel_order(self.ShortOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.ShortOrderID = None
                                     self.LastLowForShort = 0
-                                    TriggerPrice = float(round(LastLow - LastLow * self.DeltaPercent / 100, self.PricePrecision))
+                                    TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = open_short_stop_market(symbol, Amount, TriggerPrice)
+                                    NewOrder = Trade(args).open_short_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.ShortOrderID = NewOrder["orderId"]
                                         self.LastLowForShort = LastLow
                         else:
                             # Cancel Original Open Short Order
-                            OriginalOrder = cancel_order(symbol, self.ShortOrderID)
+                            OriginalOrder = Trade(args).cancel_order(self.ShortOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.ShortOrderID = None
                                 self.LastLowForShort = 0
@@ -363,33 +380,38 @@ class HandleCandle():
                         self.LastLowForShort = 0
                     elif res["status"] == "NEW": # Move SL
                         # Cancel Original Close Short Order
-                        OriginalOrder = cancel_order(symbol, self.ShortOrderID)
+                        OriginalOrder = Trade(args).cancel_order(self.ShortOrderID)
                         if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                             self.ShortOrderID = None
-                            LastPivotHigh = float(round(self.HighPivot[1] + self.HighPivot[1] * self.DeltaSL, self.PricePrecision))
-                            StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * 0.45 / 100, self.PricePrecision))
+                            LastPivotHigh = float(round(self.HighPivot[1] + self.HighPivot[1] * self.DeltaSL / 100, self.PricePrecision))
+                            StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
                             StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
-                            NewStopOrder = close_short_stop_market(symbol, StopPrice)
+                            NewStopOrder = Trade(args).close_short_stop_market(StopPrice)
                             if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                                 self.ShortOrderID = NewStopOrder["orderId"]
             if self.LongOrderID != None and self.LongPosition == False: # In the previous upgrend, if there is open long order.
-                CloseOpenLong = cancel_order(symbol, self.LongOrderID)
+                CloseOpenLong = Trade(args).cancel_order(self.LongOrderID)
                 if CloseOpenLong != None and CloseOpenLong["orderId"] and CloseOpenLong["status"] == "CANCELED":
                     self.LongOrderID = None
                     self.LastHighForLong = 0
-
 def main():
-    print("main")
     # create socket manager
     try:
-        twm = t_ws(api_key=API_KEY, api_secret=API_SECRET, testnet=True)
-        bm = bs(client)
+        logger.info_blue("Connecting Thread Websocket...")
+        twm = t_ws(api_key=TEST_API_KEY, api_secret=TEST_API_SECRET, testnet=True) if args.testnet else t_ws(api_key=API_KEY, api_secret=API_SECRET)
         twm.start()
 
-        twm.start_kline_futures_socket(callback=HandleCandle().handle_kline_msg, symbol=symbol)
+        twm.start_kline_futures_socket(callback=HandleCandle().handle_kline_msg, symbol=args.symbol)
     except BinanceAPIException as e:
-        print("something wrong!!!!!!!!!!")
+        logger.error("Socket connection error!")
         print(e)
-
+def parseArgs():
+    if args.symbol == None:
+        logger.error("Please Check Symbol argument e.g. -s BTCUSDT")
+        logger.error("exit!")
+        sys.exit()
+    else:
+        Argument().set_args(args)
+        main()
 if __name__ == "__main__":
-    main()
+    parseArgs()
