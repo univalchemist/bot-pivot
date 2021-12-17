@@ -1,8 +1,7 @@
 from binance import Client
 from binance.enums import *
-from arguments import Argument
-from log import logbook
 from parameters import *
+from utils.log import logbook
 
 logger = logbook()
 
