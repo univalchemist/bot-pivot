@@ -14,8 +14,8 @@ from trade import *
 logger = logbook()
 
 parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
-parser.add_argument('-s', '--symbol', help='str, Pair for trading e.g. "-s BTCUSDT"')
-parser.add_argument('-a', '--amount', default=50, help='float, Amount in USDT to trade e.g. "-a 50"')
+parser.add_argument('-s', '--symbol', required=True, help='str, Pair for trading e.g. "-s BTCUSDT"')
+parser.add_argument('-a', '--amount', default=50.0, type=float, help='float, Amount in USDT to trade e.g. "-a 50"')
 parser.add_argument('-ps', '--pivotstep', default=5, type=int, help='int, Left/Right candle count to calculate Pivot e.g. "-ps 5"')
 parser.add_argument('-d', '--delta', default=0, type=float, help='float, delta to determine trend e.g. "-d 10.0"')
 parser.add_argument('-dsl', '--deltasl', default=0.05, type=float, help='float, delta SL to calculate with HH, LL. its value is percentage e.g. "-dsl 0.0005"')
