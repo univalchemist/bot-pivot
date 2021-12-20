@@ -473,7 +473,7 @@ class HandleResult():
         # PlotPivot(res, self.args.pivotstep).draw_plot()
     def process_trade(self, startTime):
         maxLimit = 1440 / self.args.interval
-        res = self.client.futures_klines(symbol=self.args.symbol, interval=str(self.args.interval) + "m", startTime=startTime, limit=1440)
+        res = self.client.futures_klines(symbol=self.args.symbol, interval=str(self.args.interval) + "m", startTime=maxLimit, limit=1440)
         if res and len(res) > 0:
             position = Position(self.args.amount)
             bt = BackTest(self.args, position=position)
