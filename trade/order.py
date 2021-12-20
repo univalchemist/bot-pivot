@@ -95,3 +95,11 @@ class Trade():
       logger.error("Cancel Order Failed:")
       print(e)
       return None
+  # It is just for mock order
+  def get_order(self, order_price, price, side="buy"):
+    if side == "buy":
+      if price >= order_price: return { "status": "FILLED", "avgPrice": order_price, "orderId": 123 }
+      return { "status": "NEW", "orderId": 123 }
+    if side == "sell":
+      if price <= order_price: return { "status": "FILLED", "avgPrice": order_price, "orderId": 123 }
+      return { "status": "NEW", "orderId": 123 }
