@@ -1,25 +1,32 @@
-from binance import ThreadedWebsocketManager as t_ws
-from binance.exceptions import BinanceAPIException
 from binance.enums import *
 from collections import deque
-import json, csv
+import csv
 import os.path
 import argparse, sys
-from types import SimpleNamespace
 from datetime import timedelta, datetime
-from multiprocessing import cpu_count
-from joblib import Parallel
-from joblib import delayed
 
 from utils.arguments import Argument
-from utils.draw_pivot import PlotPivot
 from utils.log import logbook
 from parameters import *
-from strategy.pivot import PivotStrategy
 from trade.order import *
 from utils.position import Position
 
 logger = logbook()
+
+parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
+parser.add_argument('-s', '--symbol', default="BTCUSDT", help='str, Pair for trading e.g. "-s BTCUSDT"')
+parser.add_argument('-a', '--amount', default=5000.0, type=float, help='float, Amount in USDT to trade e.g. "-a 50"')
+parser.add_argument('-ps', '--pivotstep', default=5, type=int, help='int, Left/Right candle count to calculate Pivot e.g. "-ps 5"')
+parser.add_argument('-d', '--delta', default=0, type=float, help='float, delta to determine trend e.g. "-d 10.0"')
+parser.add_argument('-dsl', '--deltasl', default=0.05, type=float, help='float, delta SL to calculate with HH, LL. its value is percentage e.g. "-dsl 0.0005"')
+parser.add_argument('-dt', '--deltatrigger', default=0.15, type=float, help='float, delta percent to calculate trigger open order. its value is percentage e.g. "-dt 0.15"')
+parser.add_argument('-sl', '--stoploss', default=0.4, type=float, help='float, Percentage Stop Loss"-sl 0.4" ')
+parser.add_argument('-tp', '--takeprofit', default=0.8, type=float, help='float, Percentage of Take Profit"-sl 0.8" ')
+parser.add_argument('-st', '--starttime', required=True, type=int, help='long, timestamp milliseconds for start time"-sl 1635768000000" ')
+parser.add_argument('-du', '--duration', required=True, type=int, help='int, duration as days to test"-sl 30" ')
+parser.add_argument('-i', '--interval', default=1, type=int, help='int, time interval as minute"-sl 1" ')
+parser.add_argument('-test', '--testnet',  action="store_true", help='Run script in testnet or live mode.')
+args = parser.parse_args()
 
 class BackTest():
     def __init__(self, args, position=Position()):
@@ -432,20 +439,8 @@ class BackTest():
 class HandleResult():
     def __init__(self):
         self.client = Client(API_KEY, API_SECRET)
-        self.args = SimpleNamespace()
-        self.args.symbol = "BTCUSDT"
-        self.args.amount = 5000.0
-        self.args.pivotstep = 5
-        self.args.delta = 0
-        self.args.deltasl = 0.15
-        self.args.deltatrigger = 0.05
-        self.args.stoploss = 0.4
-        self.args.takeprofit = 0.8
-        self.args.startTime = 1635768000000
-        self.args.duration = 30
-        self.args.interval = 1
-        self.args.testnet = False
-        date = datetime.utcfromtimestamp(self.args.startTime / 1000)
+        self.args = args
+        date = datetime.utcfromtimestamp(self.args.starttime / 1000)
         year = date.year
         month = date.month
         self.filename = f"backtest/{self.args.symbol}_{year}_{month}_{self.args.interval}m_{self.args.pivotstep}step_{self.args.stoploss}sl_{self.args.takeprofit}tp.csv"
@@ -453,20 +448,15 @@ class HandleResult():
     def main(self):
         if not os.path.exists(self.filename):
             logger.warning("initializing csv...")
-            headers = ["Symbol", "Timeline", "Amount", "PivotStep", "Delta", "DeltaSL", "DeltaTrigger", "StopLoss", "StartTime", "StartTime(Human)", "TotalTrades", "Success", "Failure", "Total Fees", "Total PnL" ]
+            headers = ["Symbol", "Timeline", "Amount", "PivotStep", "Delta", "DeltaSL", "DeltaTrigger", "TakeProfit", "StopLoss", "StartTime", "StartTime(Human)", "TotalTrades", "Success", "Failure", "Total Fees", "Total PnL" ]
             with open (self.filename, 'a', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(headers)
-        startTime = self.args.startTime
+        startTime = self.args.starttime
         startTimes = []
         for _ in range(30):
             startTimes.append(startTime)
             startTime = int(startTime + timedelta(hours=24).total_seconds() * 1000)
-        # multiprocessing
-        # executor = Parallel(n_jobs=cpu_count(), backend='multiprocessing')
-        # tasks = (delayed(self.process_trade)(s) for s in startTimes)
-        # results = executor(tasks)
-        # self.result_to_csv(results)
         for s in startTimes:
             result = self.process_trade(s)
             self.result_to_csv(result)
@@ -494,6 +484,7 @@ class HandleResult():
                 self.args.delta,
                 self.args.deltasl,
                 self.args.deltatrigger,
+                self.args.takeprofit,
                 self.args.stoploss,
                 startTime,
                 humanTime,
@@ -510,4 +501,15 @@ class HandleResult():
             writer.writerow(results)
 
 if __name__ == "__main__":
-  HandleResult().main()
+
+    if args.starttime == None:
+        logger.error("Please Check Start Time e.g. -st 1635768000000")
+        logger.error("exit!")
+        sys.exit()
+    if args.duration == None:
+        logger.error("Please duration e.g. -du 30")
+        logger.error("exit!")
+        sys.exit()
+    else:
+        Argument().set_args(args)
+        HandleResult().main()
