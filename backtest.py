@@ -443,7 +443,7 @@ class HandleResult():
         self.args.takeprofit = 0.8
         self.args.startTime = 1635768000000
         self.args.duration = 30
-        self.args.interval = 15
+        self.args.interval = 5
         self.args.testnet = False
         date = datetime.utcfromtimestamp(self.args.startTime / 1000)
         year = date.year
@@ -454,7 +454,7 @@ class HandleResult():
         if not os.path.exists(self.filename):
             logger.warning("initializing csv...")
             headers = ["Symbol", "Timeline", "Amount", "PivotStep", "Delta", "DeltaSL", "DeltaTrigger", "StopLoss", "StartTime", "StartTime(Human)", "TotalTrades", "Success", "Failure", "Total Fees", "Total PnL" ]
-            with open (self.filename, 'a') as csvfile:
+            with open (self.filename, 'a', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(headers)
         startTime = self.args.startTime
@@ -472,8 +472,8 @@ class HandleResult():
             self.result_to_csv(result)
         # PlotPivot(res, self.args.pivotstep).draw_plot()
     def process_trade(self, startTime):
-        maxLimit = 1440 / self.args.interval
-        res = self.client.futures_klines(symbol=self.args.symbol, interval=str(self.args.interval) + "m", startTime=maxLimit, limit=1440)
+        maxLimit = int(1440 / self.args.interval)
+        res = self.client.futures_klines(symbol=self.args.symbol, interval=str(self.args.interval) + "m", startTime=startTime, limit=maxLimit)
         if res and len(res) > 0:
             position = Position(self.args.amount)
             bt = BackTest(self.args, position=position)
@@ -505,7 +505,7 @@ class HandleResult():
             )
     def result_to_csv(self, results):
         logger.warning("Writting csv...")
-        with open (self.filename, 'a') as csvfile:
+        with open (self.filename, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(results)
 
