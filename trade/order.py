@@ -46,7 +46,27 @@ class Trade():
           )
       return res
     except Exception as e:
-      logger.error("Close Long Order Failed:")
+      logger.error("Close Long SL Order Failed:")
+      print(e)
+      return None
+
+  def close_long_take_profit_market(self, stopPrice):
+    try:
+      res = self.client.futures_create_order(
+            symbol=self.args.symbol,
+            side="SELL",
+            positionSide="LONG",
+            type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+            # workingType="MARK_PRICE",
+            # timeInForce=TIME_IN_FORCE_GTC,
+            # quantity=amount, # No need if closePosition=True
+            stopPrice=stopPrice,
+            # reduceOnly=True,
+            closePosition=True
+          )
+      return res
+    except Exception as e:
+      logger.error("Close Long TP Order Failed:")
       print(e)
       return None
 
@@ -84,7 +104,27 @@ class Trade():
           )
       return res
     except Exception as e:
-      logger.error("Close SHORT Order Failed:")
+      logger.error("Close SHORT SL Order Failed:")
+      print(e)
+      return None
+
+  def close_short_take_profit_market(self, stopPrice):
+    try:
+      res = self.client.futures_create_order(
+            symbol=self.args.symbol,
+            side="BUY",
+            positionSide="SHORT",
+            type=FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET,
+            # workingType="MARK_PRICE",
+            # timeInForce=TIME_IN_FORCE_GTC,
+            # quantity=amount, # No need if closePosition=True
+            stopPrice=stopPrice,
+            # reduceOnly=True,
+            closePosition=True
+          )
+      return res
+    except Exception as e:
+      logger.error("Close SHORT TP Order Failed:")
       print(e)
       return None
 
