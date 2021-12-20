@@ -443,7 +443,7 @@ class HandleResult():
         self.args.takeprofit = 0.8
         self.args.startTime = 1635768000000
         self.args.duration = 30
-        self.args.interval = 5
+        self.args.interval = 1
         self.args.testnet = False
         date = datetime.utcfromtimestamp(self.args.startTime / 1000)
         year = date.year
