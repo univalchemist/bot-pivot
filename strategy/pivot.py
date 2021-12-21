@@ -513,7 +513,7 @@ class PivotStrategy():
                         CancelOrder = self.order.cancel_order(self.LongStopOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == ORDER_STATUS_CANCELED:
                             self.LongStopOrderId = None
-                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                    elif res["status"] != ORDER_STATUS_NEW:
                         # TODO
                         # The TP order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
                         # For now close position by market order
@@ -533,7 +533,7 @@ class PivotStrategy():
                         CancelOrder = self.order.cancel_order(self.LongProfitOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.LongProfitOrderId = None
-                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                    elif res["status"] != ORDER_STATUS_NEW:
                         # TODO
                         # The SL order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
                         # For now close position by market order
@@ -610,7 +610,7 @@ class PivotStrategy():
                         CancelOrder = self.order.cancel_order(self.ShortStopOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.ShortStopOrderId = None
-                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                    elif res["status"] != ORDER_STATUS_NEW:
                         # TODO
                         # The TP order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
                         # For now close position by market order
@@ -629,7 +629,7 @@ class PivotStrategy():
                         CancelOrder = self.order.cancel_order(self.ShortProfitOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.ShortProfitOrderId = None
-                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                    elif res["status"] != ORDER_STATUS_NEW:
                         # TODO
                         # The SL order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
                         # For now close position by market order
