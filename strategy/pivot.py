@@ -1,15 +1,18 @@
 from binance import Client
 from binance.enums import *
 from collections import deque
+from trade.position import Position
+from utils.enums import *
 
 from utils.log import logbook
 from parameters import *
-from trade.order import Trade
+from trade.order import Order
 
 logger = logbook()
 
 class PivotStrategy():
     def __init__(self, args):
+      logger.info_magenta("PivotStrategy Class initializing...")
       self.args = args
       self.Symbol = args.symbol
       self.PivotStep = args.pivotstep # Default is 5
@@ -46,10 +49,13 @@ class PivotStrategy():
       self.ShortStopOrderId = None
       self.ShortProfitOrderId = None
       self.client = self.create_client()
-      self.trade = Trade(self.args)
+      self.order = Order(self.args)
+      self.position = Position(self.args)
       self.prepare_before_processing()
       self.get_precision()
-      logger.info_magenta("PivotStrategy Class initializing...")
+      self.check_long_position()
+      self.check_short_position()
+    
     def create_client(self):
       if self.args.testnet: return Client(TEST_API_KEY, TEST_API_SECRET, testnet=True)
       return Client(API_KEY, API_SECRET)
@@ -123,6 +129,46 @@ class PivotStrategy():
             if x["symbol"] == self.Symbol:
                 self.PricePrecision = int(x["pricePrecision"])
                 self.QtyPrecision = int(x["quantityPrecision"])
+    def check_long_position(self):
+        long, _ = self.position.check_is_position()
+        if long[0]:
+            self.LongPosition = True
+            # Check if there is SL/TP order
+            IS_SL, slOrderId = self.order.check_is_sl_tp_order(positionSide=POSITION_LONG, checkPoint=POSITION_CHECK_SL)
+            if IS_SL: self.LongStopOrderId = slOrderId
+            else:
+                # Close the current position by market order
+                self.order.close_long_market(long[1])
+                self.LongPosition = False
+                return
+
+            IS_TP, tpOrderId = self.order.check_is_sl_tp_order(positionSide=POSITION_LONG, checkPoint=POSITION_CHECK_TP)
+            if IS_TP: self.LongProfitOrderId = tpOrderId
+            else:
+                # Close the current position by market order
+                self.order.close_long_market(long[1])
+                self.LongPosition = False
+                return
+    def check_short_position(self):
+        _, short = self.position.check_is_position()
+        if short[0]:
+            self.ShortPosition = True
+            # Check if there is SL/TP order
+            IS_SL, slOrderId = self.order.check_is_sl_tp_order(positionSide=POSITION_SHORT, checkPoint=POSITION_CHECK_SL)
+            if IS_SL: self.ShortStopOrderId = slOrderId
+            else:
+                # Close the current position by market order
+                self.order.close_long_market(short[1])
+                self.ShortPosition = False
+                return
+
+            IS_TP, tpOrderId = self.order.check_is_sl_tp_order(positionSide=POSITION_SHORT, checkPoint=POSITION_CHECK_TP)
+            if IS_TP: self.LongProfitOrderId = tpOrderId
+            else:
+                # Close the current position by market order
+                self.order.close_long_market(short[1])
+                self.ShortPosition = False
+                return
     def handle_kline_msg(self, msg):
         Info = msg["k"]
         Closed = Info["x"]
@@ -223,7 +269,7 @@ class PivotStrategy():
                     LastPivotLow = float(round(LastPivotLow - LastPivotLow * self.DeltaSL / 100, self.PricePrecision))
                     StopPrice = float(round(LastLow - LastLow * self.StopLoss / 100, self.PricePrecision))
                     StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
-                    NewStopOrder = self.trade.close_long_stop_market(StopPrice)
+                    NewStopOrder = self.order.close_long_stop_market(StopPrice)
                     if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                         self.LongOrderID = NewStopOrder["orderId"]
                 else: # There is no any long position and stop order.
@@ -232,7 +278,7 @@ class PivotStrategy():
                     if LastLow >= LastPivotLow:
                         TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                        NewOrder = self.trade.open_long_stop_market(Amount, TriggerPrice)
+                        NewOrder = self.order.open_long_stop_market(Amount, TriggerPrice)
                         if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                             self.LongOrderID = NewOrder["orderId"]
                             self.LastHighForLong = LastHigh # Need for next moving SL
@@ -247,7 +293,7 @@ class PivotStrategy():
                         self.LongAvgPrice = avgPrice
                         StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
-                        StopOrder = self.trade.close_long_stop_market(StopPrice)
+                        StopOrder = self.order.close_long_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.LongOrderID = StopOrder["orderId"]
                     elif res["status"] == "NEW": # Still no filled, Move Stop Trigger
@@ -260,19 +306,19 @@ class PivotStrategy():
                         if LastLow >= LastPivotLow:
                             if self.LastHighForLong > LastHigh:
                                 # Cancel Original Open Long Order
-                                OriginalOrder = self.trade.cancel_order(self.LongOrderID)
+                                OriginalOrder = self.order.cancel_order(self.LongOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.LongOrderID = None
                                     self.LastHighForLong = 0
                                     TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = self.trade.open_long_stop_market(Amount, TriggerPrice)
+                                    NewOrder = self.order.open_long_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.LongOrderID = NewOrder["orderId"]
                                         self.LastHighForLong = LastHigh
                         else:
                             # Cancel Original Open Long Order
-                            OriginalOrder = self.trade.cancel_order(self.LongOrderID)
+                            OriginalOrder = self.order.cancel_order(self.LongOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.LongOrderID = None
                                 self.LastHighForLong = 0
@@ -289,17 +335,17 @@ class PivotStrategy():
                         self.LastHighForLong = 0
                     elif res["status"] == "NEW": # Move Stop Loss
                         # Cancel Original Close Stop Order
-                        OriginalOrder = self.trade.cancel_order(self.LongOrderID)
+                        OriginalOrder = self.order.cancel_order(self.LongOrderID)
                         if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                             self.LongOrderID = None
                             LastPivotLow = float(round(self.LowPivot[1] - self.LowPivot[1] * self.DeltaSL / 100, self.PricePrecision))
                             StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
                             StopPrice = StopPrice if StopPrice > LastPivotLow else LastPivotLow
-                            NewStopOrder = self.trade.close_long_stop_market(StopPrice)
+                            NewStopOrder = self.order.close_long_stop_market(StopPrice)
                             if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                                 self.LongOrderID = NewStopOrder["orderId"]
             if self.ShortOrderID != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
-                CloseOpenShort = self.trade.cancel_order(self.ShortOrderID)
+                CloseOpenShort = self.order.cancel_order(self.ShortOrderID)
                 if CloseOpenShort != None and CloseOpenShort["orderId"] and CloseOpenShort["status"] == "CANCELED":
                     self.ShortOrderID = None
                     self.LastLowForShort = 0
@@ -314,7 +360,7 @@ class PivotStrategy():
                     LastPivotHigh = float(round(LastPivotHigh + LastPivotHigh * self.DeltaSL / 100, self.PricePrecision))
                     StopPrice = float(round(LastHigh + LastHigh * self.StopLoss / 100, self.PricePrecision))
                     StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
-                    NewStopOrder = self.trade.close_short_stop_market(StopPrice)
+                    NewStopOrder = self.order.close_short_stop_market(StopPrice)
                     if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                         self.ShortOrderID = NewStopOrder["orderId"]
                 else: # There is no any position, order
@@ -323,7 +369,7 @@ class PivotStrategy():
                     if LastPivotHigh >= LastHigh:
                         TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                        NewOrder = self.trade.open_short_stop_market(Amount, TriggerPrice)
+                        NewOrder = self.order.open_short_stop_market(Amount, TriggerPrice)
                         if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                             self.ShortOrderID = NewOrder["orderId"]
                             self.LastLowForShort = LastLow
@@ -338,7 +384,7 @@ class PivotStrategy():
                         self.ShortAvgPrice = avgPrice
                         StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
-                        StopOrder = self.trade.close_short_stop_market(StopPrice)
+                        StopOrder = self.order.close_short_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.ShortOrderID = StopOrder["orderId"]
                     elif res["status"] == "NEW": # Still no filled, Move Stop Trigger
@@ -351,19 +397,19 @@ class PivotStrategy():
                         if LastPivotHigh >= LastHigh:
                             if LastLow > self.LastLowForShort:
                                 # Cancel Original Stop Order
-                                OriginalOrder = self.trade.cancel_order(self.ShortOrderID)
+                                OriginalOrder = self.order.cancel_order(self.ShortOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.ShortOrderID = None
                                     self.LastLowForShort = 0
                                     TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = self.trade.open_short_stop_market(Amount, TriggerPrice)
+                                    NewOrder = self.order.open_short_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.ShortOrderID = NewOrder["orderId"]
                                         self.LastLowForShort = LastLow
                         else:
                             # Cancel Original Open Short Order
-                            OriginalOrder = self.trade.cancel_order(self.ShortOrderID)
+                            OriginalOrder = self.order.cancel_order(self.ShortOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.ShortOrderID = None
                                 self.LastLowForShort = 0
@@ -378,17 +424,17 @@ class PivotStrategy():
                         self.LastLowForShort = 0
                     elif res["status"] == "NEW": # Move SL
                         # Cancel Original Close Short Order
-                        OriginalOrder = self.trade.cancel_order(self.ShortOrderID)
+                        OriginalOrder = self.order.cancel_order(self.ShortOrderID)
                         if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                             self.ShortOrderID = None
                             LastPivotHigh = float(round(self.HighPivot[1] + self.HighPivot[1] * self.DeltaSL / 100, self.PricePrecision))
                             StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
                             StopPrice = LastPivotHigh if StopPrice > LastPivotHigh else StopPrice
-                            NewStopOrder = self.trade.close_short_stop_market(StopPrice)
+                            NewStopOrder = self.order.close_short_stop_market(StopPrice)
                             if NewStopOrder != None and NewStopOrder["orderId"] and NewStopOrder["status"] == "NEW":
                                 self.ShortOrderID = NewStopOrder["orderId"]
             if self.LongOrderID != None and self.LongPosition == False: # In the previous upgrend, if there is open long order.
-                CloseOpenLong = self.trade.cancel_order(self.LongOrderID)
+                CloseOpenLong = self.order.cancel_order(self.LongOrderID)
                 if CloseOpenLong != None and CloseOpenLong["orderId"] and CloseOpenLong["status"] == "CANCELED":
                     self.LongOrderID = None
                     self.LastHighForLong = 0
@@ -405,7 +451,7 @@ class PivotStrategy():
                     if LastLow >= LastPivotLow:
                         TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                        NewOrder = self.trade.open_long_stop_market(Amount, TriggerPrice)
+                        NewOrder = self.order.open_long_stop_market(Amount, TriggerPrice)
                         if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                             self.PositionAmount = Amount
                             self.LongOrderID = NewOrder["orderId"]
@@ -420,10 +466,10 @@ class PivotStrategy():
                         StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = StopPrice if StopPrice > LastPivotStopLoss else LastPivotStopLoss
                         ProfitPrice = float(round(self.LongAvgPrice + self.LongAvgPrice * self.TakeProfit / 100, self.PricePrecision))
-                        StopOrder = self.trade.close_long_stop_market(StopPrice)
+                        StopOrder = self.order.close_long_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.LongStopOrderId = StopOrder["orderId"]
-                        TakeProfitOrder = self.trade.close_long_take_profit_market(ProfitPrice)
+                        TakeProfitOrder = self.order.close_long_take_profit_market(ProfitPrice)
                         if TakeProfitOrder != None and TakeProfitOrder["orderId"] and TakeProfitOrder["status"] == "NEW":
                             self.LongProfitOrderId = TakeProfitOrder["orderId"]
                         self.PositionEntry = self.LongAvgPrice
@@ -433,52 +479,69 @@ class PivotStrategy():
                         if LastLow >= LastPivotLow:
                             if self.LastHighForLong > LastHigh:
                                 # Cancel Original Open Long Order
-                                OriginalOrder = self.trade.cancel_order(self.LongOrderID)
+                                OriginalOrder = self.order.cancel_order(self.LongOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.LongOrderID = None
                                     self.LastHighForLong = 0
                                     TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = self.trade.open_long_stop_market(Amount, TriggerPrice)
+                                    NewOrder = self.order.open_long_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.LongOrderID = NewOrder["orderId"]
                                         self.LastHighForLong = LastHigh
                         else:
                             # Cancel Original Open Long Order
-                            OriginalOrder = self.trade.cancel_order(self.LongOrderID)
+                            OriginalOrder = self.order.cancel_order(self.LongOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.LongOrderID = None
                                 self.LastHighForLong = 0
                     # TODO
-                    # If the order is failed, partial-filled, canceled...
+                    else: # Order status is PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED
+                        self.LongOrderID = None
+                        self.LastHighForLong = 0
 
             else:
                 if self.LongProfitOrderId: # In case of takeprofit
                     res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.LongProfitOrderId)
-                    if res["status"] == "FILLED":
+                    if res["status"] == ORDER_STATUS_FILLED:
                         # TODO:
                         # Store trade result(Entry, Exit, Amount, Fee, PnL)
                         self.LongProfitOrderId = None
                         self.LongPosition = False
                         self.LastHighForLong = 0
                         # Cancel SL order
-                        CancelOrder = self.trade.cancel_order(self.LongStopOrderId)
-                        if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
+                        CancelOrder = self.order.cancel_order(self.LongStopOrderId)
+                        if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == ORDER_STATUS_CANCELED:
                             self.LongStopOrderId = None
+                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                        # TODO
+                        # The TP order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
+                        # For now close position by market order
+                        self.order.cancel_order(self.LongProfitOrderId)
+                        self.check_long_position()
+
+                else: self.check_long_position()
                 if self.LongStopOrderId: # In case of stoploss
                     res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.LongStopOrderId)
-                    if res["status"] == "FILLED":
+                    if res["status"] == ORDER_STATUS_FILLED:
                         # TODO:
                         # Store trade result(Entry, Exit, Amount, Fee, PnL)
                         self.LongStopOrderId = None
                         self.LongPosition = False
                         self.LastHighForLong = 0
                         # Cancel SL order
-                        CancelOrder = self.trade.cancel_order(self.LongProfitOrderId)
+                        CancelOrder = self.order.cancel_order(self.LongProfitOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.LongProfitOrderId = None
+                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                        # TODO
+                        # The SL order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
+                        # For now close position by market order
+                        self.order.cancel_order(self.LongStopOrderId)
+                        self.check_long_position()
+                else: self.check_long_position()
             if self.ShortOrderID != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
-                CloseOpenShort = self.trade.cancel_order(self.ShortOrderID)
+                CloseOpenShort = self.order.cancel_order(self.ShortOrderID)
                 if CloseOpenShort != None and CloseOpenShort["orderId"] and CloseOpenShort["status"] == "CANCELED":
                     self.ShortOrderID = None
                     self.LastLowForShort = 0
@@ -488,7 +551,7 @@ class PivotStrategy():
                     if LastPivotHigh >= LastHigh:
                         TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                        NewOrder = self.trade.open_short_stop_market(Amount, TriggerPrice)
+                        NewOrder = self.order.open_short_stop_market(Amount, TriggerPrice)
                         if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                             self.PositionAmount = Amount
                             self.ShortOrderID = NewOrder["orderId"]
@@ -503,10 +566,10 @@ class PivotStrategy():
                         StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
                         StopPrice = LastPivotStopLoss if StopPrice > LastPivotStopLoss else StopPrice
                         ProfitPrice = float(round(self.ShortAvgPrice - self.ShortAvgPrice * self.TakeProfit / 100, self.PricePrecision))
-                        StopOrder = self.trade.close_short_stop_market(StopPrice)
+                        StopOrder = self.order.close_short_stop_market(StopPrice)
                         if StopOrder != None and StopOrder["orderId"] and StopOrder["status"] == "NEW":
                             self.ShortStopOrderId = StopOrder["orderId"]
-                        TakeProfitOrder = self.trade.close_short_take_profit_market(ProfitPrice)
+                        TakeProfitOrder = self.order.close_short_take_profit_market(ProfitPrice)
                         if TakeProfitOrder != None and TakeProfitOrder["orderId"] and TakeProfitOrder["status"] == "NEW":
                             self.ShortProfitOrderId = TakeProfitOrder["orderId"]
                         self.PositionEntry = self.ShortAvgPrice
@@ -516,21 +579,24 @@ class PivotStrategy():
                         if LastHigh < LastPivotHigh:
                             if self.LastLowForShort < LastLow:
                                 # Cancel Original Open Long Order
-                                OriginalOrder = self.trade.cancel_order(self.ShortOrderID)
+                                OriginalOrder = self.order.cancel_order(self.ShortOrderID)
                                 if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                     self.ShortOrderID = None
                                     TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                                     Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
-                                    NewOrder = self.trade.open_short_stop_market(Amount, TriggerPrice)
+                                    NewOrder = self.order.open_short_stop_market(Amount, TriggerPrice)
                                     if NewOrder != None and NewOrder["orderId"] and NewOrder["status"] == "NEW":
                                         self.ShortOrderID = NewOrder["orderId"]
                                         self.LastLowForShort = LastLow
                         else:
                             # Cancel Original Open Long Order
-                            OriginalOrder = self.trade.cancel_order(self.ShortOrderID)
+                            OriginalOrder = self.order.cancel_order(self.ShortOrderID)
                             if OriginalOrder != None and OriginalOrder["orderId"] and OriginalOrder["status"] == "CANCELED":
                                 self.ShortOrderID = None
                                 self.LastLowForShort = 0
+                    else: # Order status is PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED
+                        self.ShortOrderID = None
+                        self.LastLowForShort = 0
             else:
                 if self.ShortProfitOrderId: # In case of takeprofit
                     res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.ShortProfitOrderId)
@@ -541,10 +607,17 @@ class PivotStrategy():
                         self.ShortPosition = False
                         self.LastLowForShort = 0
                         # Cancel SL order
-                        CancelOrder = self.trade.cancel_order(self.ShortStopOrderId)
+                        CancelOrder = self.order.cancel_order(self.ShortStopOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.ShortStopOrderId = None
-                elif self.ShortStopOrderId: # In case of stoploss
+                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                        # TODO
+                        # The TP order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
+                        # For now close position by market order
+                        self.order.cancel_order(self.ShortProfitOrderId)
+                        self.check_short_position()
+                else: self.check_short_position()
+                if self.ShortStopOrderId: # In case of stoploss
                     res = self.client.futures_get_order(symbol=self.Symbol, orderId=self.ShortStopOrderId)
                     if res["status"] == "FILLED":
                     # TODO:
@@ -553,11 +626,18 @@ class PivotStrategy():
                         self.ShortPosition = False
                         self.LastLowForShort = 0
                         # Cancel SL order
-                        CancelOrder = self.trade.cancel_order(self.ShortProfitOrderId)
+                        CancelOrder = self.order.cancel_order(self.ShortProfitOrderId)
                         if CancelOrder != None and CancelOrder["orderId"] and CancelOrder["status"] == "CANCELED":
                             self.ShortProfitOrderId = None
+                    if res["status"] != ORDER_STATUS_FILLED and res["status"] != ORDER_STATUS_NEW:
+                        # TODO
+                        # The SL order is not NEW or FILLED(PARTIALLY_FILLED, CANCELED, PENDING_CANCEL, REJECTED, EXPIRED)
+                        # For now close position by market order
+                        self.order.cancel_order(self.ShortStopOrderId)
+                        self.check_short_position()
+                else: self.check_short_position()
             if self.LongOrderID != None and self.LongPosition == False: # In the previous downtrend, if there is open short order.
-                CloseOpenLong = self.trade.cancel_order(self.LongOrderID)
+                CloseOpenLong = self.order.cancel_order(self.LongOrderID)
                 if CloseOpenLong != None and CloseOpenLong["orderId"] and CloseOpenLong["status"] == "CANCELED":
                     self.LongOrderID = None
                     self.LastHighForLong = 0
