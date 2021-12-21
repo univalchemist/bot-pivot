@@ -34,13 +34,11 @@ class BackTest():
       self.Symbol = args.symbol
       self.PivotStep = args.pivotstep # Default is 5
       self.MaxlenKlines = self.PivotStep*2 + 1
-      self.Klines50 = deque(maxlen=50)
-      self.Klines100 = deque(maxlen=100)
       self.Klines = deque(maxlen=self.MaxlenKlines)
       self.HighPivot = deque(maxlen=2)
       self.LowPivot = deque(maxlen=2)
-      self.NextPivot = "None"
-      self.Trend = "None"
+      self.NextPivot = None
+      self.Trend = None
       self.Delta = args.delta # Default is 10
       self.DeltaSL = args.deltasl # Default is 0.05
       self.PricePrecision = 1
@@ -109,34 +107,34 @@ class BackTest():
             # Check the candle is green or red
             IsUpCandle = True if Close > Open else False
             # It is just for the process to find the first high/low point
-            if self.NextPivot == "None":
+            if self.NextPivot == None:
                 if HighCheck == True:
                     self.HighPivot.append(High)
-                    self.NextPivot = "Low"
+                    self.NextPivot = PIVOT_LOW
                 elif LowCheck == True:
                     self.LowPivot.append(Low)
-                    self.NextPivot = "High"
+                    self.NextPivot = PIVOT_HIGH
             else:
                 if HighCheck == True:
                     # Check the current high pivot is greater than the previous one. If true, replace the previous one to current
                     LastHigh = self.HighPivot[len(self.HighPivot) - 1] if len(self.HighPivot) > 0 else 0
                     # Check the current high pivot is greater than the previous one. If true, replace the previous one to current
-                    if self.NextPivot == "Low" and High > LastHigh and LastHigh > 0:
+                    if self.NextPivot == PIVOT_LOW and High > LastHigh and LastHigh > 0:
                         self.HighPivot.remove(LastHigh)
                         self.HighPivot.append(High)
-                    if self.NextPivot == "High":
+                    if self.NextPivot == PIVOT_HIGH:
                         self.HighPivot.append(High)
-                        self.NextPivot = "Low"
+                        self.NextPivot = PIVOT_LOW
                 if LowCheck == True:
                     # Check there is continuous LL without LH
                     LastLow = self.LowPivot[len(self.LowPivot) - 1] if len(self.LowPivot) > 0 else 0
                     # Check the current low pivot is less than the previous one. If true, replace the previous one to current
-                    if self.NextPivot == "High" and LastLow > Low and LastLow > 0:
+                    if self.NextPivot == PIVOT_HIGH and LastLow > Low and LastLow > 0:
                         self.LowPivot.remove(LastLow)
                         self.LowPivot.append(Low)
-                    if self.NextPivot == "Low":
+                    if self.NextPivot == PIVOT_LOW:
                         self.LowPivot.append(Low)
-                        self.NextPivot = "High"
+                        self.NextPivot = PIVOT_HIGH
         self.check_up_down_trend()
     def check_up_down_trend(self):
         # Check high/low pivots length is max length
@@ -150,19 +148,19 @@ class BackTest():
             DeltaLow = abs(LowP1 - LowP0)
             if DeltaHigh > self.Delta or DeltaLow > self.Delta:
                 if LowP1 > LowP0 and HighP1 > HighP0: # Strong Uptrend
-                    self.Trend = "Up"
-                elif LowP1 >= LowP0 and HighP0 > HighP1 and self.NextPivot == "High": # In downtrend, appear new HL
-                    self.Trend = "Up"
-                elif LowP0 > LowP1 and HighP1 >= HighP0 and self.NextPivot == "Low": # In downtrend, appear new HH
-                    self.Trend = "Up"
+                    self.Trend = TREND_UP
+                elif LowP1 >= LowP0 and HighP0 > HighP1 and self.NextPivot == PIVOT_HIGH: # In downtrend, appear new HL
+                    self.Trend = TREND_UP
+                elif LowP0 > LowP1 and HighP1 >= HighP0 and self.NextPivot == PIVOT_LOW: # In downtrend, appear new HH
+                    self.Trend = TREND_UP
                 elif HighP0 > HighP1 and LowP0 > LowP1: # Strong Downtrend
-                    self.Trend = "Down"
-                elif HighP1 > HighP0 and LowP0 >= LowP1 and self.NextPivot == "High": # In uptrend, appear new LL
-                    self.Trend = "Down"
-                elif HighP0 >= HighP1 and LowP1 > LowP0 and self.NextPivot == "Low": # In uptrend, appear new LH
-                    self.Trend = "Down"
+                    self.Trend = TREND_DOWN
+                elif HighP1 > HighP0 and LowP0 >= LowP1 and self.NextPivot == PIVOT_HIGH: # In uptrend, appear new LL
+                    self.Trend = TREND_DOWN
+                elif HighP0 >= HighP1 and LowP1 > LowP0 and self.NextPivot == PIVOT_LOW: # In uptrend, appear new LH
+                    self.Trend = TREND_DOWN
             else:
-                self.Trend = "None"
+                self.Trend = TREND_NONE
             self.mock_order_tp_sl()
     def mock_order_tp_sl(self):
         logger.info("The Trend is " + self.Trend)
@@ -171,7 +169,7 @@ class BackTest():
         LastCandle = self.Klines[-1]
         LastHigh = float(LastCandle["High"])
         LastLow = float(LastCandle["Low"])
-        if self.Trend == "Up":
+        if self.Trend == TREND_UP:
             if self.LongPosition == False:
                 if self.LongOrderPrice == None: # There is no any open long order
                     if LastLow >= LastPivotLow:
@@ -235,7 +233,7 @@ class BackTest():
             if self.ShortOrderPrice != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
                 self.ShortOrderPrice = None
                 self.LastLowForShort = 0
-        if self.Trend == "Down":
+        if self.Trend == TREND_DOWN:
             if self.ShortPosition == False:
                 if self.ShortOrderPrice == None: # There is no any open short order
                     if LastPivotHigh >= LastHigh:
