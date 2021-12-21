@@ -24,7 +24,7 @@ parser.add_argument('-sl', '--stoploss', default=0.4, type=float, help='float, P
 parser.add_argument('-tp', '--takeprofit', default=0.8, type=float, help='float, Percentage of Take Profit"-sl 0.8" ')
 parser.add_argument('-st', '--starttime', required=True, type=int, help='long, timestamp milliseconds for start time"-sl 1635768000000" ')
 parser.add_argument('-du', '--duration', required=True, type=int, help='int, duration as days to test"-sl 30" ')
-parser.add_argument('-i', '--interval', default=1, type=int, help='int, time interval as minute"-sl 1" ')
+parser.add_argument('-i', '--interval', default=1, type=int, help='int, time interval as minute"-i 1" ')
 parser.add_argument('-test', '--testnet',  action="store_true", help='Run script in testnet or live mode.')
 args = parser.parse_args()
 
