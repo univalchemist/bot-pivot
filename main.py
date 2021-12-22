@@ -21,6 +21,7 @@ parser.add_argument('-dsl', '--deltasl', default=0.2, type=float, help='float, d
 parser.add_argument('-dt', '--deltatrigger', default=0.05, type=float, help='float, delta percent to calculate trigger open order. its value is percentage e.g. "-dt 0.15"')
 parser.add_argument('-sl', '--stoploss', default=0.6, nargs="?", const=True, type=float, help='float, Percentage Stop loss from your input USDT amount "-sl 0.45" ')
 parser.add_argument('-tp', '--takeprofit', default=0.6, type=float, help='float, Percentage of Take Profit"-sl 0.8" ')
+parser.add_argument('-i', '--interval', default=1, type=int, help='int, time interval as minute"-i 1" ')
 parser.add_argument('-test', '--testnet',  action="store_true", help='Run script in testnet or live mode.')
 parser.add_argument('-backtest', '--backtest',  action="store_true", help='Run script in backtest. No need in main.py')
 args = parser.parse_args()
