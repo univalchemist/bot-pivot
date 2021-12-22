@@ -6,10 +6,10 @@ from back.position import Position
 from client.trade import Trade
 from utils.enums import *
 
-from utils.log import logbook
+from utils.log import Logger
 from parameters import *
 
-logger = logbook()
+logger = Logger()
 
 class PivotStrategy():
     def __init__(self, args, position):

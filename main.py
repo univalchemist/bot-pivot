@@ -4,13 +4,13 @@ from binance.enums import *
 import argparse, sys
 from utils.arguments import Argument
 
-from utils.log import logbook
+from utils.log import Logger
 from parameters import *
 import strategy.pivot as sp
 from client.order import *
 from back.position import Position
 
-logger = logbook()
+logger = Logger()
 
 parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
 parser.add_argument('-s', '--symbol', required=True, help='str, Pair for trading e.g. "-s BTCUSDT"')

@@ -6,12 +6,12 @@ import argparse, sys
 from datetime import timedelta, datetime
 
 from utils.arguments import Argument
-from utils.log import logbook
+from utils.log import Logger
 from parameters import *
 from client.order import *
 from .position import Position
 
-logger = logbook()
+logger = Logger()
 
 class MockOrder():
   def __init__(self, args, position):

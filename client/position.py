@@ -3,9 +3,9 @@ from binance.enums import *
 from parameters import *
 from .client import create_client
 from utils.enums import *
-from utils.log import logbook
+from utils.log import Logger
 
-logger = logbook()
+logger = Logger()
 
 class Position():
   def __init__(self, args):

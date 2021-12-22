@@ -5,9 +5,9 @@ import argparse, sys
 
 from parameters import *
 from utils.draw_pivot import PlotPivot
-from utils.log import logbook
+from utils.log import Logger
 
-logger = logbook()
+logger = Logger()
 
 parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
 parser.add_argument('-s', '--symbol', default="BTCUSDT", help='str, Pair for trading e.g. "-s BTCUSDT"')

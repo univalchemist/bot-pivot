@@ -9,11 +9,11 @@ from back.position import Position
 from strategy.pivot import PivotStrategy
 
 from utils.arguments import Argument
-from utils.log import logbook
+from utils.log import Logger
 from parameters import *
 from client.order import *
 
-logger = logbook()
+logger = Logger()
 
 parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
 parser.add_argument('-s', '--symbol', default="BTCUSDT", help='str, Pair for trading e.g. "-s BTCUSDT"')

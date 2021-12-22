@@ -1,6 +1,6 @@
-from utils.log import logbook
+from utils.log import Logger
 
-logger = logbook()
+logger = Logger()
 
 class Position():
   def __init__(self, amount=0):

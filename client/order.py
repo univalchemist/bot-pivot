@@ -2,10 +2,11 @@ from binance import Client
 from binance.enums import *
 from parameters import *
 from .client import create_client
-from utils.log import logbook
+from utils.log import Logbook, Logger
 from utils.enums import *
 
-logger = logbook()
+logger = Logger()
+ERROR = Logbook().createERRORLogger()
 
 class Order():
   def __init__(self, args):
@@ -25,7 +26,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Open Long Order Failed:")
+      error = f"Failed Open Long Order({self.args.symbol}, {amount}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -45,7 +49,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Close Long SL Order Failed:")
+      error = f"Failed Close Long SL Order({self.args.symbol}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -61,7 +68,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Close Long Market Order Failed:")
+      error = f"Failed Close Long Market Order({self.args.symbol}, {amount})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -81,7 +91,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Close Long TP Order Failed:")
+      error = f"Failed Close Long TP Order({self.args.symbol}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -99,7 +112,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Open Short Order Failed:")
+      error = f"Failed Open Short Order({self.args.symbol}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -119,7 +135,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Close SHORT SL Order Failed:")
+      error = f"Failed Close SHORT SL Order({self.args.symbol}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -139,7 +158,10 @@ class Order():
           )
       return res
     except Exception as e:
-      logger.error("Close SHORT TP Order Failed:")
+      error = f"Failed Close SHORT TP Order({self.args.symbol}, {stopPrice})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
 
@@ -147,7 +169,10 @@ class Order():
     try:
       return self.client.futures_cancel_order(symbol=self.args.symbol, orderId=orderId)
     except Exception as e:
-      logger.error("Cancel Order Failed: " + str(orderId))
+      error = f"Failed Cancel Order({self.args.symbol}, {orderId})"
+      logger.error(error)
+      ERROR.error(error)
+      ERROR.error(e)
       print(e)
       return None
   def check_is_sl_tp_order(self, positionSide=POSITION_LONG, checkPoint=POSITION_CHECK_SL):
