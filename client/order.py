@@ -1,7 +1,7 @@
 from binance import Client
 from binance.enums import *
 from parameters import *
-from trade.client import create_client
+from .client import create_client
 from utils.log import logbook
 from utils.enums import *
 

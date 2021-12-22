@@ -1,6 +1,6 @@
 from binance import Client
 from binance.enums import *
-from trade.order import *
+from client.order import *
 import argparse, sys
 
 from parameters import *

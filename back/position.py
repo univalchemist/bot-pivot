@@ -1,4 +1,4 @@
-from .log import logbook
+from utils.log import logbook
 
 logger = logbook()
 
@@ -27,3 +27,5 @@ class Position():
       pnl = pnl + round(profit, 2)
     totalFee = self.fee * self.amount / 100 * totalTradeCount
     return totalTradeCount, pnl, totalFee, successCount, failureCount
+  def initialize_positions(self):
+    self.positions = []
