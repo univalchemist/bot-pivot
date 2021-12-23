@@ -40,6 +40,8 @@ class BackTest():
         month = date.month
         self.filename = f"back/result/{self.args.symbol}_{year}_{month}_{self.args.interval}m_{self.args.pivotstep}step_{self.args.stoploss}sl_{self.args.takeprofit}tp.csv"
 
+        self.position = Position(self.args.amount)
+        self.ps = PivotStrategy(self.args, position=self.position)
     def main(self):
         if not os.path.exists(self.filename):
             logger.warning("initializing csv...")
@@ -60,10 +62,9 @@ class BackTest():
         maxLimit = int(1440 / self.args.interval)
         res = self.client.futures_klines(symbol=self.args.symbol, interval=str(self.args.interval) + "m", startTime=startTime, limit=maxLimit)
         if res and len(res) > 0:
-            position = Position(self.args.amount)
-            ps = PivotStrategy(self.args, position=position)
+            self.position.initialize_positions()
             for row in res:
-                ps.handle_kline_msg({
+                self.ps.handle_kline_msg({
                     "k": {
                         "x": True,
                         "o": row[1],
@@ -72,7 +73,7 @@ class BackTest():
                         "c": row[4],
                     }
                 })
-            totalTradeCount, pnl, totalFee, successCount, failureCount = position.calculate_pnl()
+            totalTradeCount, pnl, totalFee, successCount, failureCount = self.position.calculate_pnl()
             logger.info("Total Trades: " + str(totalTradeCount))
             logger.info_magenta("Total PnL: " + str(pnl))
             logger.info_blue("Total Fees: " + str(totalFee))
