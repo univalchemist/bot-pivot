@@ -1,7 +1,7 @@
 from binance import Client
 from binance.enums import *
 from parameters import *
-from .client import create_client
+from .client import BinanceClient
 from utils.enums import *
 from utils.log import Logger
 
@@ -10,10 +10,10 @@ logger = Logger()
 class Position():
   def __init__(self, args):
     self.args = args
-    self.client = create_client(args)
+    self.client = BinanceClient(args).client
     pass
   def check_is_position(self):
-    position_info = self.client.futures_position_information(symbol=self.args.symbol)
+    position_info = self.client.futures_position_information(symbol=self.args.symbol, recvWindow=recvWindow)
 
     position_long = [x for x in position_info if x["positionSide"] == POSITION_LONG and float(x["positionAmt"]) > 0 and float(x["entryPrice"]) > 0]
     position_short = [x for x in position_info if x["positionSide"] == POSITION_SHORT  and float(x["positionAmt"]) > 0 and float(x["entryPrice"]) > 0]

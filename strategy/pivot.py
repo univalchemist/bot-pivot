@@ -1,7 +1,7 @@
 from binance.enums import *
 from collections import deque
 from back.mock_order import MockOrder
-from client.client import create_client
+from client.client import BinanceClient
 from back.position import Position
 from client.trade import Trade
 from utils.enums import *
@@ -24,13 +24,14 @@ class PivotStrategy():
       self.LowPivot = deque(maxlen=2)
       self.NextPivot = None
       self.Trend = TREND_NONE
-      self.client = create_client(self.args)
+      self.client = BinanceClient(self.args).client
       self.trade = MockOrder(self.args, position) if args.backtest else Trade(self.args)
       self.prepare_before_processing()
 
     def prepare_before_processing(self):
         if self.args.backtest: return
-        res = self.client.futures_klines(symbol=self.Symbol, interval=str(self.args.interval) + "m")
+        logger.info("Processing getting the previous klines.. ")
+        res = self.client.futures_klines(symbol=self.Symbol, interval=str(self.args.interval) + "m", limit=150)
         length = len(res)
         i = 0
         Klines = deque(maxlen=self.MaxlenKlines)
@@ -96,8 +97,8 @@ class PivotStrategy():
     def handle_kline_msg(self, msg):
         Info = msg["k"]
         Closed = Info["x"]
-        logger.info("The current candle's closed is " + str(Closed))
         if Closed == True:
+            logger.info("The current candle's closed is " + str(Closed))
             self.Klines.append({
                 "Open": Info["o"],
                 "Close": Info["c"],

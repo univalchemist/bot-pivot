@@ -4,13 +4,14 @@ from binance.enums import *
 import argparse, sys
 from utils.arguments import Argument
 
-from utils.log import Logger
+from utils.log import Logger, Logbook
 from parameters import *
 import strategy.pivot as sp
 from client.order import *
 from back.position import Position
 
 logger = Logger()
+ERROR = Logbook().createERRORLogger()
 
 parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, PivotStep, DeltaPivot, DeltaSL, DeltaTrigger, StopLoss, Testnet. Example: "main.py -s BTCUSDT"')
 parser.add_argument('-s', '--symbol', required=True, help='str, Pair for trading e.g. "-s BTCUSDT"')
@@ -33,9 +34,15 @@ def main():
         twm = t_ws(api_key=TEST_API_KEY, api_secret=TEST_API_SECRET, testnet=True) if args.testnet else t_ws(api_key=API_KEY, api_secret=API_SECRET)
         twm.start()
         position = Position(args.amount)
-        twm.start_kline_futures_socket(callback=sp.PivotStrategy(args, position=position).handle_kline_msg, symbol=args.symbol)
+        ps = sp.PivotStrategy(args, position=position)
+        twm.start_kline_futures_socket(callback=ps.handle_kline_msg, symbol=args.symbol)
+        # streams = ["btcusdt_perputual@continuousKline_1m"]
+        # twm.start_futures_multiplex_socket(callback=ps.handle_kline_msg, streams=streams)
+        # twm.join()
+
     except BinanceAPIException as e:
         logger.error("Socket connection error!")
+        ERROR.error(e)
         print(e)
 def parseArgs():
     if args.symbol == None:
