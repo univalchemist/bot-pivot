@@ -1,7 +1,7 @@
 from binance import Client
 from binance.enums import *
 from parameters import *
-from .client import create_client
+from .client import BinanceClient
 from utils.log import Logbook, Logger
 from utils.enums import *
 
@@ -11,7 +11,7 @@ ERROR = Logbook().createERRORLogger()
 class Order():
   def __init__(self, args):
     self.args = args
-    self.client = create_client(args)
+    self.client = BinanceClient(args).client
   def open_long_stop_market(self, amount, stopPrice):
     try:
       res = self.client.futures_create_order(
@@ -22,7 +22,8 @@ class Order():
             # workingType="MARK_PRICE",
             # timeInForce=TIME_IN_FORCE_GTC,
             quantity=amount,
-            stopPrice=stopPrice
+            stopPrice=stopPrice,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -45,7 +46,8 @@ class Order():
             # quantity=amount, # No need if closePosition=True
             stopPrice=stopPrice,
             # reduceOnly=True,
-            closePosition=True
+            closePosition=True,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -64,7 +66,8 @@ class Order():
             positionSide=POSITION_LONG,
             type=FUTURE_ORDER_TYPE_MARKET,
             # reduceOnly=True,
-            quantity=amount
+            quantity=amount,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -87,7 +90,8 @@ class Order():
             # quantity=amount, # No need if closePosition=True
             stopPrice=stopPrice,
             # reduceOnly=True,
-            closePosition=True
+            closePosition=True,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -108,7 +112,8 @@ class Order():
             # workingType="MARK_PRICE",
             # timeInForce=TIME_IN_FORCE_GTC,
             quantity=amount,
-            stopPrice=stopPrice
+            stopPrice=stopPrice,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -131,7 +136,8 @@ class Order():
             # quantity=amount, # No need if closePosition=True
             stopPrice=stopPrice,
             # reduceOnly=True,
-            closePosition=True
+            closePosition=True,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -154,7 +160,8 @@ class Order():
             # quantity=amount, # No need if closePosition=True
             stopPrice=stopPrice,
             # reduceOnly=True,
-            closePosition=True
+            closePosition=True,
+            recvWindow=recvWindow
           )
       return res
     except Exception as e:
@@ -167,7 +174,7 @@ class Order():
 
   def cancel_order(self, orderId):
     try:
-      return self.client.futures_cancel_order(symbol=self.args.symbol, orderId=orderId)
+      return self.client.futures_cancel_order(symbol=self.args.symbol, orderId=orderId, recvWindow=recvWindow)
     except Exception as e:
       error = f"Failed Cancel Order({self.args.symbol}, {orderId})"
       logger.error(error)
@@ -176,7 +183,7 @@ class Order():
       print(e)
       return None
   def check_is_sl_tp_order(self, positionSide=POSITION_LONG, checkPoint=POSITION_CHECK_SL):
-    res = self.client.futures_get_open_orders(symbol=self.args.symbol)
+    res = self.client.futures_get_open_orders(symbol=self.args.symbol, recvWindow=recvWindow)
     if checkPoint == POSITION_CHECK_SL: type = FUTURE_ORDER_TYPE_STOP_MARKET
     if checkPoint == POSITION_CHECK_TP: type = FUTURE_ORDER_TYPE_TAKE_PROFIT_MARKET
     if positionSide == POSITION_LONG: side = SIDE_SELL
