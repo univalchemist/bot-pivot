@@ -4,16 +4,18 @@ from binance.enums import *
 from collections import deque
 import json
 import websocket
+import datetime as dt
 from threading import Lock, Thread
 from .client import BinanceClient
 from .position import Position
 from utils.enums import *
 
-from utils.log import Logger
+from utils.log import Logbook, Logger
 from parameters import *
 from .order import Order
 
 logger = Logger()
+ERROR = Logbook().createERRORLogger()
 
 class Trade():
     def __init__(self, args):
@@ -54,6 +56,8 @@ class Trade():
 
         self.PositionAmount = 0
         self.PositionEntry = 0
+
+        self.StartStreamTime = 0
 
         self.client = BinanceClient(self.args).client
         self.order = Order(self.args)
@@ -111,22 +115,29 @@ class Trade():
     def thread_stream(self):
         Thread(target=self.start_user_data_stream).start()
     def start_user_data_stream(self):
-        key = self.client.futures_stream_get_listen_key()
-        BASE_URL = DATA_STREAM_URL_TESTNET if self.args.testnet else DATA_STREAM_URL
-        SOCKET = BASE_URL + "/ws/" + key
-        ws = websocket.WebSocketApp(SOCKET, on_open=self.on_open, on_close=self.on_close, on_message=self.on_message)
-        ws.run_forever()
-        self.keep_alive()
+        try:
+            key = self.client.futures_stream_get_listen_key()
+            BASE_URL = DATA_STREAM_URL_TESTNET if self.args.testnet else DATA_STREAM_URL
+            SOCKET = BASE_URL + "/ws/" + key
+            self.StartStreamTime = dt.datetime.now().timestamp()
+            ws = websocket.WebSocketApp(SOCKET, on_open=self.on_open, on_close=self.on_close, on_message=self.on_message)
+            ws.run_forever()
+        except Exception as e:
+            logger.error("Stream User Data Connection error!")
+            ERROR.error(e)
     def keep_alive(self):
-        # while True:
-        #     logger.info_blue("putting new listenkey to keep stream alive...")
-        #     new_key = self.client.futures_stream_get_listen_key()
-        #     self.client.futures_stream_keepalive(new_key)
-        #     sleep(1800)
+        now = dt.datetime.now().timestamp()
+        diff = now - self.StartStreamTime # Difference between the current time and the previous activated time
+        if diff > 1800: # If difference is greater than 1800s(30m), activate listenkey again
+            try:
+                logger.info_blue("putting new listenkey to keep stream alive...")
+                new_key = self.client.futures_stream_get_listen_key()
+                self.client.futures_stream_keepalive(new_key)
+                self.StartStreamTime = now
+            except Exception as e:
+                logger.error("Putting new listenkey to keep alive error!")
+                ERROR.error(e)
 
-        logger.info_blue("putting new listenkey to keep stream alive...")
-        new_key = self.client.futures_stream_get_listen_key()
-        self.client.futures_stream_keepalive(new_key)
     def on_open(self, ws):
         logger.info("opened connection to User Data streams")
 
@@ -137,7 +148,7 @@ class Trade():
         logger.info_magenta("message received from User Data streams")
         json_message = json.loads(message)
         print(json_message)
-        if json_message["e"] == "listenKeyExpired": self.keep_alive()
+        # if json_message["e"] == "listenKeyExpired": self.keep_alive()
         if json_message["e"] == "ORDER_TRADE_UPDATE": self.handle_order_update(json_message)
     def handle_order_update(self, msg):
         info = msg["o"]
@@ -151,9 +162,6 @@ class Trade():
         close_position = info["cp"] # FALSE
         original_quantity = info["q"] # Quantity
         avg_price = info["ap"] # Average Filled Price
-        print(position_side)
-        print(side)
-        print(order_status)
         # Long Position
         if position_side == POSITION_LONG:
             if side == SIDE_BUY:
@@ -267,6 +275,7 @@ class Trade():
                         self.order.cancel_order(self.ShortProfitOrderId)
 
     def handle_order_tp_sl(self, Trend, LastPivotLow, LastPivotHigh, LastCandle):
+        self.keep_alive() # For checking listenkey expiration
         logger.info("The Trend is " + Trend)
         LastHigh = float(LastCandle["High"])
         LastLow = float(LastCandle["Low"])
@@ -274,26 +283,14 @@ class Trade():
         self.LastPivotHigh = LastPivotHigh
         self.LastHigh = LastHigh
         self.LastLow = LastLow
-        print("Long..........")
-        print(self.LongPosition)
-        print(self.LongOrderID)
-        print(self.LongStopOrderId)
-        print(self.LongProfitOrderId)
-        print("Short..........")
-        print(self.ShortPosition)
-        print(self.ShortOrderID)
-        print(self.ShortStopOrderId)
-        print(self.ShortProfitOrderId)
         if Trend == TREND_UP:
             if self.LongPosition == False:
                 if self.LongOrderID == None: # There is no any open long order
-                    logger.warning("No long order")
                     if LastLow >= LastPivotLow:
                         TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
                         self.order.open_long_stop_market(Amount, TriggerPrice)
                 else: # There is open long order
-                    logger.info_magenta("Long Order exists!")
                     if LastLow >= LastPivotLow:
                         if self.LastHighForLong > LastHigh:
                             # Cancel Original Open Long Order and create new one

@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 class BackTest():
     def __init__(self):
-        self.client = Client(API_KEY, API_SECRET)
+        self.client = BinanceClient(args).client
         self.args = args
         date = datetime.utcfromtimestamp(self.args.starttime / 1000)
         self.year = date.year

@@ -98,7 +98,6 @@ class PivotStrategy():
         Info = msg["k"]
         Closed = Info["x"]
         if Closed == True:
-            logger.info("The current candle's closed is " + str(Closed))
             self.Klines.append({
                 "Open": Info["o"],
                 "Close": Info["c"],
