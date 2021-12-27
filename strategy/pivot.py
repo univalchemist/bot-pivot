@@ -1,5 +1,6 @@
 from binance.enums import *
 from collections import deque
+import itertools
 from back.mock_order import MockOrder
 from client.client import BinanceClient
 from back.position import Position
@@ -12,26 +13,36 @@ from parameters import *
 logger = Logger()
 
 class PivotStrategy():
-    def __init__(self, args, position):
-      logger.info_magenta("PivotStrategy Class initializing...")
-      self.args = args
-      self.Symbol = args.symbol
-      self.PivotStep = args.pivotstep # Default is 5
-      self.Delta = args.delta # Default is 10
-      self.MaxlenKlines = self.PivotStep*2 + 1
-      self.Klines = deque(maxlen=self.MaxlenKlines)
-      self.HighPivot = deque(maxlen=2)
-      self.LowPivot = deque(maxlen=2)
-      self.NextPivot = None
-      self.Trend = TREND_NONE
-      self.client = BinanceClient(self.args).client
-      self.trade = MockOrder(self.args, position) if args.backtest else Trade(self.args)
-      self.prepare_before_processing()
+    def __init__(self, args, position, client):
+        logger.info_magenta("PivotStrategy Class initializing...")
+        self.args = args
+        self.Symbol = args.symbol
+        self.PivotStep = args.pivotstep # Default is 5
+        self.Delta = args.delta # Default is 10
+        self.MaxlenKlines = self.PivotStep*2 + 1
+        self.Klines = deque(maxlen=200)
+        self.HighPivot = deque(maxlen=2)
+        self.LowPivot = deque(maxlen=2)
+        self.NextPivot = None
+        self.Trend = TREND_NONE
+        self.PricePrecision = 1
+        self.QtyPrecision = 1
+        self.client = client
+        self.get_precision()
+        self.trade = MockOrder(self.args, position) if args.backtest else Trade(self.args, self.PricePrecision, self.QtyPrecision)
+        self.prepare_before_processing()
+    def get_precision(self):
+        info = self.client.futures_exchange_info()
+        for x in info["symbols"]:
+            if x["symbol"] == self.Symbol:
+                self.PricePrecision = int(x["pricePrecision"])
+                self.QtyPrecision = int(x["quantityPrecision"])
 
     def prepare_before_processing(self):
-        if self.args.backtest: return
         logger.info("Processing getting the previous klines.. ")
-        res = self.client.futures_klines(symbol=self.Symbol, interval=str(self.args.interval) + "m", limit=150)
+        if self.args.backtest:
+            res = self.client.futures_klines(symbol=self.Symbol, interval=str(self.args.interval) + "m", endTime=self.args.starttime, limit=100)
+        else: res = self.client.futures_klines(symbol=self.Symbol, interval=str(self.args.interval) + "m", limit=100)
         length = len(res)
         i = 0
         Klines = deque(maxlen=self.MaxlenKlines)
@@ -106,14 +117,16 @@ class PivotStrategy():
                 })
             self.calculate_pivot_high_low()
     def calculate_pivot_high_low(self):
-        if len(self.Klines) == self.MaxlenKlines:
-            Kline = self.Klines[self.PivotStep]
+        length = len(self.Klines)
+        if length >= self.MaxlenKlines:
+            LastKlines = list(itertools.islice(self.Klines, length - self.MaxlenKlines, length))
+            Kline = LastKlines[self.PivotStep]
             Open = float(Kline["Open"])
             Close = float(Kline["Close"])
             High = float(Kline["High"]) # Get high value of 5th candle to compare left/right 5 candles
             Low = float(Kline["Low"]) # Get low value of 5th candle to compare left/right 5 candles
-            _klins_left = list(self.Klines)[0:self.PivotStep]
-            _klins_right = list(self.Klines)[self.PivotStep + 1:self.MaxlenKlines]
+            _klins_left = list(LastKlines)[0:self.PivotStep]
+            _klins_right = list(LastKlines)[self.PivotStep + 1:self.MaxlenKlines]
             # Highs of left/right 5 candles
             HighsLeft = [float(x["High"]) for x in _klins_left]
             LowsLeft = [float(x["Low"]) for x in _klins_left]
@@ -125,6 +138,9 @@ class PivotStrategy():
             LowCheck = True if all(x >= Low for x in LowsLeft) and all(x > Low for x in LowsRight) else False
             # Check the candle is green or red
             IsUpCandle = True if Close > Open else False
+            LastHigh = self.HighPivot[len(self.HighPivot) - 1] if len(self.HighPivot) > 0 else 0
+            LastLow = self.LowPivot[len(self.LowPivot) - 1] if len(self.LowPivot) > 0 else 0
+
             # It is just for the process to find the first high/low point
             if self.NextPivot == None:
                 if HighCheck == True:
@@ -136,8 +152,6 @@ class PivotStrategy():
             else:
                 if HighCheck == True:
                     # Check the current high pivot is greater than the previous one. If true, replace the previous one to current
-                    LastHigh = self.HighPivot[len(self.HighPivot) - 1] if len(self.HighPivot) > 0 else 0
-                    # Check the current high pivot is greater than the previous one. If true, replace the previous one to current
                     if self.NextPivot == PIVOT_LOW and High > LastHigh and LastHigh > 0:
                         self.HighPivot.remove(LastHigh)
                         self.HighPivot.append(High)
@@ -145,8 +159,6 @@ class PivotStrategy():
                         self.HighPivot.append(High)
                         self.NextPivot = PIVOT_LOW
                 if LowCheck == True:
-                    # Check there is continuous LL without LH
-                    LastLow = self.LowPivot[len(self.LowPivot) - 1] if len(self.LowPivot) > 0 else 0
                     # Check the current low pivot is less than the previous one. If true, replace the previous one to current
                     if self.NextPivot == PIVOT_HIGH and LastLow > Low and LastLow > 0:
                         self.LowPivot.remove(LastLow)
@@ -154,35 +166,31 @@ class PivotStrategy():
                     if self.NextPivot == PIVOT_LOW:
                         self.LowPivot.append(Low)
                         self.NextPivot = PIVOT_HIGH
-        self.check_up_down_trend()
-    def check_up_down_trend(self):
-        # Check high/low pivots length is max length
-        if len(self.LowPivot) == 2 and len(self.HighPivot) == 2:
-            # Get last two low/high pivots
-            LowP0 = self.LowPivot[0]
-            LowP1 = self.LowPivot[1]
-            HighP0 = self.HighPivot[0]
-            HighP1 = self.HighPivot[1]
-            DeltaHigh = abs(HighP1 - HighP0)
-            DeltaLow = abs(LowP1 - LowP0)
-            if DeltaHigh > self.Delta or DeltaLow > self.Delta:
-                if LowP1 > LowP0 and HighP1 > HighP0: # Strong Uptrend
-                    self.Trend = TREND_UP
-                elif LowP1 >= LowP0 and HighP0 > HighP1 and self.NextPivot == PIVOT_HIGH: # In downtrend, appear new HL
-                    self.Trend = TREND_UP
-                elif LowP0 > LowP1 and HighP1 >= HighP0 and self.NextPivot == PIVOT_LOW: # In downtrend, appear new HH
-                    self.Trend = TREND_UP
-                elif HighP0 > HighP1 and LowP0 > LowP1: # Strong Downtrend
-                    self.Trend = TREND_DOWN
-                elif HighP1 > HighP0 and LowP0 >= LowP1 and self.NextPivot == PIVOT_HIGH: # In uptrend, appear new LL
-                    self.Trend = TREND_DOWN
-                elif HighP0 >= HighP1 and LowP1 > LowP0 and self.NextPivot == PIVOT_LOW: # In uptrend, appear new LH
-                    self.Trend = TREND_DOWN
-            else:
-                self.Trend = TREND_NONE
+        # self.check_up_down_trend()
+        if self.args.backtest: self.trade.mock_order_tp_sl(self.NextPivot, LastHigh, LastLow)
+        else: self.trade.handle_order_tp_sl(self.Trend, LastHigh, LastLow)
+    # def check_up_down_trend(self):
+    #     MA_100 = 0
+    #     if len(self.Klines) == 200:
+    #         MA_100 = round(sum(float(k["Close"]) for k in self.Klines) / 200, self.PricePrecision)
+    #     # Check high/low pivots length is max length
+    #     if len(self.LowPivot) == 2 and len(self.HighPivot) == 2 and MA_100 > 0:
+    #         # Get last two low/high pivots
+    #         LowP1 = self.LowPivot[1]
+    #         HighP1 = self.HighPivot[1]
+    #         LastCandle = self.Klines[-1]
+    #         LastHigh = float(LastCandle["High"])
+    #         LastLow = float(LastCandle["Low"])
+    #         if HighP1 >= MA_100:
+    #             delta_ma = MA_100 - MA_100 * self.Delta / 100
+    #             if LowP1 >= MA_100 and LastLow >= MA_100:
+    #              self.Trend = TREND_UP
+    #         elif MA_100 >= LowP1:
+    #             delta_ma = MA_100 + MA_100 * self.Delta / 100
+    #             if MA_100 >= HighP1 and MA_100 >= LastHigh:
+    #                 self.Trend = TREND_DOWN
+    #         else:
+    #             self.Trend = TREND_NONE
             
-            LastPivotLow = self.LowPivot[1]
-            LastPivotHigh = self.HighPivot[1]
-            LastCandle = self.Klines[-1]
-            if self.args.backtest: self.trade.mock_order_tp_sl(self.Trend, LastPivotLow, LastPivotHigh, LastCandle)
-            else: self.trade.handle_order_tp_sl(self.Trend, LastPivotLow, LastPivotHigh, LastCandle)
+    #         if self.args.backtest: self.trade.mock_order_tp_sl(self.Trend, LastHigh, LastLow, MA_100)
+    #         else: self.trade.handle_order_tp_sl(self.Trend, LastHigh, LastLow, MA_100)

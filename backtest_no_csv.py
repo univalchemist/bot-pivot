@@ -19,11 +19,11 @@ parser = argparse.ArgumentParser(description='Set your Symbol, TradeAmount, Pivo
 parser.add_argument('-s', '--symbol', default="BTCUSDT", help='str, Pair for trading e.g. "-s BTCUSDT"')
 parser.add_argument('-a', '--amount', default=5000.0, type=float, help='float, Amount in USDT to trade e.g. "-a 50"')
 parser.add_argument('-ps', '--pivotstep', default=5, type=int, help='int, Left/Right candle count to calculate Pivot e.g. "-ps 5"')
-parser.add_argument('-d', '--delta', default=0, type=float, help='float, delta to determine trend e.g. "-d 10.0"')
+parser.add_argument('-d', '--delta', default=0.1, type=float, help='float, delta to determine trend e.g. "-d 10.0"')
 parser.add_argument('-dsl', '--deltasl', default=0.2, type=float, help='float, delta SL to calculate with HH, LL. its value is percentage e.g. "-dsl 0.0005"')
-parser.add_argument('-dt', '--deltatrigger', default=0.05, type=float, help='float, delta percent to calculate trigger open order. its value is percentage e.g. "-dt 0.15"')
-parser.add_argument('-sl', '--stoploss', default=0.6, type=float, help='float, Percentage Stop Loss"-sl 0.4" ')
-parser.add_argument('-tp', '--takeprofit', default=0.6, type=float, help='float, Percentage of Take Profit"-sl 0.8" ')
+parser.add_argument('-dt', '--deltatrigger', default=0.1, type=float, help='float, delta percent to calculate trigger open order. its value is percentage e.g. "-dt 0.15"')
+parser.add_argument('-sl', '--stoploss', default=0.1, type=float, help='float, Percentage Stop Loss"-sl 0.4" ')
+parser.add_argument('-tp', '--takeprofit', default=3, type=float, help='float, Percentage of Take Profit"-sl 0.8" ')
 parser.add_argument('-st', '--starttime', required=True, type=int, help='long, timestamp milliseconds for start time"-sl 1635768000000" ')
 parser.add_argument('-du', '--duration', required=True, type=int, help='int, duration as days to test"-sl 30" ')
 parser.add_argument('-i', '--interval', default=1, type=int, help='int, time interval as minute"-i 1" ')
@@ -41,12 +41,12 @@ class BackTest():
         self.trades = []
 
         self.position = Position(self.args.amount)
-        self.ps = PivotStrategy(self.args, position=self.position)
+        self.ps = PivotStrategy(self.args, position=self.position, client=self.client)
 
     def main(self):
         startTime = self.args.starttime
         startTimes = []
-        for _ in range(30):
+        for _ in range(self.args.duration):
             startTimes.append(startTime)
             startTime = int(startTime + timedelta(hours=24).total_seconds() * 1000)
         for s in startTimes:

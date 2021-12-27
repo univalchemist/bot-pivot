@@ -25,6 +25,11 @@ class PlotPivot():
         dataframe['High'] = dataframe['High'].astype('float64')
         dataframe['Low'] = dataframe['Low'].astype('float64')
         dataframe['Close'] = dataframe['Close'].astype('float64')
+        close_mav50 = dataframe["Close"].rolling(50).mean().values
+        close_mav100 = dataframe["Close"].rolling(100).mean().values
+        low_mav50 = dataframe["Low"].rolling(50).mean().values
+        low_mav100 = dataframe["Low"].rolling(100).mean().values
+        mavdf = pd.DataFrame(dict(OpMav100=close_mav100),index=dataframe.index)
         dataframe.dropna()
         values = dataframe.values
 
@@ -98,6 +103,8 @@ class PlotPivot():
 
         apd_low = mpf.make_addplot(low_pivot, type='scatter', markersize=200, marker='^')
         apd_high = mpf.make_addplot(high_pivot, type='scatter', markersize=200, marker='v')
-        apds = [apd_low, apd_high]
+        ap = mpf.make_addplot(mavdf,type='line')
+        apds = [apd_low, apd_high, ap]
+        # mpf.plot(dataframe, addplot=apds, type='candle', mav=(50, 100))
         mpf.plot(dataframe, addplot=apds, type='candle')
         # mpf.plot(dataframe, type='candle')

@@ -18,14 +18,14 @@ logger = Logger()
 ERROR = Logbook().createERRORLogger()
 
 class Trade():
-    def __init__(self, args):
+    def __init__(self, args, pricePrecision, qtyPrecision):
         logger.info_magenta("Trade Class initializing...")
         self.args = args
         self.Symbol = args.symbol
         self.Delta = args.delta # Default is 10
         self.DeltaSL = args.deltasl # Default is 0.05
-        self.PricePrecision = 1
-        self.QtyPrecision = 1
+        self.PricePrecision = pricePrecision
+        self.QtyPrecision = qtyPrecision
         self.DeltaTrigger = args.deltatrigger # Default is 0.15
         self.AmountPerTrade = args.amount # Default is 50
         self.StopLoss = args.stoploss # Default is 0.4
@@ -49,10 +49,11 @@ class Trade():
         self.ShortOriginalProfitOrderId = None
         self.ShortOriginalStopOrderId = None
 
-        self.LastPivotLow = 0
-        self.LastPivotHigh = 0
-        self.LastHigh = 0
-        self.LastLow = 0
+        # self.LastPivotLow = 0
+        # self.LastPivotHigh = 0
+        # self.LastHigh = 0
+        # self.LastLow = 0
+        self.MA_100 = 0
 
         self.PositionAmount = 0
         self.PositionEntry = 0
@@ -173,11 +174,11 @@ class Trade():
                     self.LongAvgPrice = float(avg_price)
                     self.PositionAmount = original_quantity
                     # Should open SL/TP order
-                    LastPivotStopLoss = float(round(self.LastPivotLow - self.LastPivotLow * self.DeltaSL / 100, self.PricePrecision))
-                    StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
-                    StopPrice = StopPrice if StopPrice > LastPivotStopLoss else LastPivotStopLoss
+                    # LastPivotStopLoss = float(round(self.LastPivotLow - self.LastPivotLow * self.DeltaSL / 100, self.PricePrecision))
+                    # StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
+                    # StopPrice = StopPrice if StopPrice > LastPivotStopLoss else LastPivotStopLoss
                     ProfitPrice = float(round(self.LongAvgPrice + self.LongAvgPrice * self.TakeProfit / 100, self.PricePrecision))
-                    self.order.close_long_stop_market(StopPrice)
+                    self.order.close_long_stop_market(self.MA_100)
                     sleep(1)
                     self.order.close_long_take_profit_market(ProfitPrice)
                     self.PositionEntry = self.LongAvgPrice
@@ -228,11 +229,11 @@ class Trade():
                     self.ShortPosition = True
                     self.ShortAvgPrice = float(avg_price)
                     self.PositionAmount = original_quantity
-                    LastPivotStopLoss = float(round(self.LastPivotHigh + self.LastPivotHigh * self.DeltaSL / 100, self.PricePrecision))
-                    StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
-                    StopPrice = LastPivotStopLoss if StopPrice > LastPivotStopLoss else StopPrice
+                    # LastPivotStopLoss = float(round(self.LastPivotHigh + self.LastPivotHigh * self.DeltaSL / 100, self.PricePrecision))
+                    # StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
+                    # StopPrice = LastPivotStopLoss if StopPrice > LastPivotStopLoss else StopPrice
                     ProfitPrice = float(round(self.ShortAvgPrice - self.ShortAvgPrice * self.TakeProfit / 100, self.PricePrecision))
-                    self.order.close_short_stop_market(StopPrice)
+                    self.order.close_short_stop_market(self.MA_100)
                     sleep(1)
                     self.order.close_short_take_profit_market(ProfitPrice)
                     self.PositionEntry = self.LongAvgPrice
@@ -274,24 +275,23 @@ class Trade():
                         # Cancel TP order
                         self.order.cancel_order(self.ShortProfitOrderId)
 
-    def handle_order_tp_sl(self, Trend, LastPivotLow, LastPivotHigh, LastCandle):
+    def handle_order_tp_sl(self, Trend, LastHigh, LastLow, MA_100):
         self.keep_alive() # For checking listenkey expiration
         logger.info("The Trend is " + Trend)
-        LastHigh = float(LastCandle["High"])
-        LastLow = float(LastCandle["Low"])
-        self.LastPivotLow = LastPivotLow
-        self.LastPivotHigh = LastPivotHigh
-        self.LastHigh = LastHigh
-        self.LastLow = LastLow
+        # self.LastPivotLow = LastPivotLow
+        # self.LastPivotHigh = LastPivotHigh
+        # self.LastHigh = LastHigh
+        # self.LastLow = LastLow
+        self.MA_100 = MA_100
         if Trend == TREND_UP:
             if self.LongPosition == False:
                 if self.LongOrderID == None: # There is no any open long order
-                    if LastLow >= LastPivotLow:
+                    # if LastLow >= LastPivotLow:
                         TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
                         self.order.open_long_stop_market(Amount, TriggerPrice)
                 else: # There is open long order
-                    if LastLow >= LastPivotLow:
+                    if LastLow >= MA_100:
                         if self.LastHighForLong > LastHigh:
                             # Cancel Original Open Long Order and create new one
                             self.order.cancel_order(self.LongOrderID)
@@ -308,12 +308,12 @@ class Trade():
         if Trend == TREND_DOWN:
             if self.ShortPosition == False:
                 if self.ShortOrderID == None: # There is no any open short order
-                    if LastPivotHigh >= LastHigh:
+                    # if LastPivotHigh >= LastHigh:
                         TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
                         self.order.open_short_stop_market(Amount, TriggerPrice)
                 else: # There is open short order
-                    if LastHigh < LastPivotHigh:
+                    if LastHigh <= MA_100:
                         if self.LastLowForShort < LastLow:
                             # Cancel Original Open Short Order and create new one
                             self.order.cancel_order(self.ShortOrderID)

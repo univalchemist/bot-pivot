@@ -58,24 +58,10 @@ class MockOrder():
               self.PricePrecision = int(x["pricePrecision"])
               self.QtyPrecision = int(x["quantityPrecision"])
   
-  def mock_order_tp_sl(self, Trend, LastPivotLow, LastPivotHigh, LastCandle):
-        logger.info("The Trend is " + Trend)
-        LastHigh = float(LastCandle["High"])
-        LastLow = float(LastCandle["Low"])
+  def mock_order_tp_sl(self, NextPivot, LastHigh, LastLow):
+        logger.info("The NextPivot is " + str(NextPivot))
         if self.LongPosition:
-            if LastHigh > self.LongTakeProfit: # In case of takeprofit
-                self.position.add_position({
-                "Amount": self.PositionAmount,
-                "Entry": self.PositionEntry,
-                "Exit": self.LongTakeProfit,
-                "Side": "Long"
-                })
-                self.LongOrderPrice = None
-                self.LongStopLoss = None
-                self.LongTakeProfit = None
-                self.LongPosition = False
-                self.LastHighForLong = 0
-            elif LastLow < self.LongStopLoss: # In case of stoploss
+            if LastLow < self.LongStopLoss: # In case of stoploss
                 self.position.add_position({
                     "Amount": self.PositionAmount,
                     "Entry": self.PositionEntry,
@@ -87,20 +73,13 @@ class MockOrder():
                 self.LongTakeProfit = None
                 self.LongPosition = False
                 self.LastHighForLong = 0
+            elif LastLow > self.LongAvgPrice:
+                self.LongAvgPrice = LastLow
+                StopPrice = float(round(LastLow - LastLow * self.StopLoss / 100, self.PricePrecision))
+                self.LongStopLoss = StopPrice
+
         if self.ShortPosition:
-            if self.ShortTakeProfit > LastLow: # In case of takeprofit
-                self.position.add_position({
-                    "Amount": self.PositionAmount,
-                    "Entry": self.PositionEntry,
-                    "Exit": self.ShortTakeProfit,
-                    "Side": "Short"
-                })
-                self.ShortOrderPrice = None
-                self.ShortStopLoss = None
-                self.ShortTakeProfit = None
-                self.ShortPosition = False
-                self.LastLowForShort = 0
-            elif self.ShortStopLoss < LastHigh: # In case of stoploss
+            if self.ShortStopLoss < LastHigh: # In case of stoploss
                 self.position.add_position({
                     "Amount": self.PositionAmount,
                     "Entry": self.PositionEntry,
@@ -109,13 +88,16 @@ class MockOrder():
                 })
                 self.ShortOrderPrice = None
                 self.ShortStopLoss = None
-                self.ShortTakeProfit = None
                 self.ShortPosition = False
                 self.LastLowForShort = 0
-        if Trend == TREND_UP:
+            elif LastHigh < self.ShortAvgPrice:
+                self.ShortAvgPrice = LastHigh
+                StopPrice = float(round(LastHigh + LastHigh * self.StopLoss / 100, self.PricePrecision))
+                self.ShortStopLoss = StopPrice
+        if NextPivot == PIVOT_HIGH:
             if self.LongPosition == False:
                 if self.LongOrderPrice == None: # There is no any open long order
-                    if LastLow >= LastPivotLow:
+                    # if LastLow >= MA_100:
                         TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
                         self.PositionAmount = Amount
@@ -126,34 +108,27 @@ class MockOrder():
                     if LastHigh > self.LongOrderPrice:
                         self.LongPosition = True
                         self.LongAvgPrice = self.LongOrderPrice
-                        LastPivotStopLoss = float(round(LastPivotLow - LastPivotLow * self.DeltaSL / 100, self.PricePrecision))
                         StopPrice = float(round(self.LongAvgPrice - self.LongAvgPrice * self.StopLoss / 100, self.PricePrecision))
-                        StopPrice = StopPrice if StopPrice > LastPivotStopLoss else LastPivotStopLoss
-                        ProfitPrice = float(round(self.LongAvgPrice + self.LongAvgPrice * self.TakeProfit / 100, self.PricePrecision))
                         
                         self.PositionEntry = self.LongAvgPrice
                         self.LongStopLoss = StopPrice
-                        self.LongTakeProfit = ProfitPrice
                     else: # Still no filled, Move Stop Trigger
-                        # If the last candle low price is greater than last pivot low, continue.
-                        if LastLow >= LastPivotLow:
+                        # If the last candle low price is greater than MA_100, continue.
+                        # if LastLow >= MA_100:
                             if self.LastHighForLong > LastHigh:
                                 # Cancel Original Open Long Order
                                 self.LongOrderPrice = None
                                 TriggerPrice = float(round(LastHigh + LastHigh * self.DeltaTrigger / 100, self.PricePrecision))
                                 self.LongOrderPrice = TriggerPrice
                                 self.LastHighForLong = LastHigh
-                        else:
-                            # Cancel Original Open Long Order
-                            self.LongOrderPrice = None
-                            self.LastHighForLong = 0
-            if self.ShortOrderPrice != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
-                self.ShortOrderPrice = None
-                self.LastLowForShort = 0
-        if Trend == TREND_DOWN:
+
+            # if self.ShortOrderPrice != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
+            #     self.ShortOrderPrice = None
+            #     self.LastLowForShort = 0
+        elif NextPivot == PIVOT_LOW:
             if self.ShortPosition == False:
                 if self.ShortOrderPrice == None: # There is no any open short order
-                    if LastPivotHigh >= LastHigh:
+                    # if MA_100 >= LastHigh:
                         TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                         Amount = float(round(self.AmountPerTrade / TriggerPrice, self.QtyPrecision))
                         self.PositionAmount = Amount
@@ -164,27 +139,24 @@ class MockOrder():
                     if self.ShortOrderPrice > LastLow:
                         self.ShortPosition = True
                         self.ShortAvgPrice = self.ShortOrderPrice
-                        LastPivotStopLoss = float(round(LastPivotHigh + LastPivotHigh * self.DeltaSL / 100, self.PricePrecision))
                         StopPrice = float(round(self.ShortAvgPrice + self.ShortAvgPrice * self.StopLoss / 100, self.PricePrecision))
-                        StopPrice = LastPivotStopLoss if StopPrice > LastPivotStopLoss else StopPrice
-                        ProfitPrice = float(round(self.ShortAvgPrice - self.ShortAvgPrice * self.TakeProfit / 100, self.PricePrecision))
 
                         self.PositionEntry = self.ShortAvgPrice
                         self.ShortStopLoss = StopPrice
-                        self.ShortTakeProfit = ProfitPrice
                     else: # Still no filled, Move Stop Trigger
                         # If the last candle high price is greater than last pivot high, continue.
-                        if LastHigh < LastPivotHigh:
+                        # if LastHigh <= MA_100:
                             if self.LastLowForShort < LastLow:
                                 # Cancel Original Open Long Order
                                 self.ShortOrderPrice = None
                                 TriggerPrice = float(round(LastLow - LastLow * self.DeltaTrigger / 100, self.PricePrecision))
                                 self.ShortOrderPrice = TriggerPrice
                                 self.LastLowForShort = LastLow
-                        else:
-                            # Cancel Original Open Long Order
-                            self.ShortOrderPrice = None
-                            self.LastLowForShort = 0
-            if self.LongOrderPrice != None and self.LongPosition == False: # In the previous downtrend, if there is open short order.
-                self.LongOrderPrice = None
-                self.LastHighForLong = 0
+            # if self.LongOrderPrice != None and self.LongPosition == False: # In the previous downtrend, if there is open short order.
+            #     self.LongOrderPrice = None
+            #     self.LastHighForLong = 0
+        else: # TREND_NONE
+            self.LongOrderPrice = None
+            self.LastHighForLong = 0
+            self.ShortOrderPrice = None
+            self.LastLowForShort = 0
