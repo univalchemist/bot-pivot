@@ -58,8 +58,7 @@ class MockOrder():
               self.PricePrecision = int(x["pricePrecision"])
               self.QtyPrecision = int(x["quantityPrecision"])
   
-  def mock_order_tp_sl(self, NextPivot, LastHigh, LastLow):
-        logger.info("The NextPivot is " + str(NextPivot))
+  def mock_order_trailing_sl(self, LastHigh, LastLow):
         if self.LongPosition:
             if LastLow < self.LongStopLoss: # In case of stoploss
                 self.position.add_position({
@@ -95,7 +94,7 @@ class MockOrder():
                 StopPrice = float(round(LastHigh + LastHigh * self.StopLoss / 100, self.PricePrecision))
                 self.ShortStopLoss = StopPrice
         if self.LongPosition == False and self.ShortPosition == False:
-            if NextPivot == PIVOT_HIGH:
+            # if NextPivot == PIVOT_HIGH:
                 # if self.LongPosition == False:
                     if self.LongOrderPrice == None: # There is no any open long order
                         # if LastLow >= MA_100:
@@ -126,7 +125,7 @@ class MockOrder():
                 # if self.ShortOrderPrice != None and self.ShortPosition == False: # In the previous downtrend, if there is open short order.
                 #     self.ShortOrderPrice = None
                 #     self.LastLowForShort = 0
-            elif NextPivot == PIVOT_LOW:
+            # elif NextPivot == PIVOT_LOW:
                 # if self.ShortPosition == False:
                     if self.ShortOrderPrice == None: # There is no any open short order
                         # if MA_100 >= LastHigh:
@@ -156,8 +155,8 @@ class MockOrder():
                 # if self.LongOrderPrice != None and self.LongPosition == False: # In the previous downtrend, if there is open short order.
                 #     self.LongOrderPrice = None
                 #     self.LastHighForLong = 0
-            else: # TREND_NONE
-                self.LongOrderPrice = None
-                self.LastHighForLong = 0
-                self.ShortOrderPrice = None
-                self.LastLowForShort = 0
+            # else: # TREND_NONE
+            #     self.LongOrderPrice = None
+            #     self.LastHighForLong = 0
+            #     self.ShortOrderPrice = None
+            #     self.LastLowForShort = 0

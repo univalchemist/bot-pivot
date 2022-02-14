@@ -1,7 +1,7 @@
 from binance.enums import *
 from collections import deque
 import itertools
-from back.mock_order import MockOrder
+from back.mock_order_trailing import MockOrder
 from client.client import BinanceClient
 from back.position import Position
 from client.trade import Trade
@@ -30,7 +30,7 @@ class PivotStrategy():
         self.client = client
         self.get_precision()
         self.trade = MockOrder(self.args, position) if args.backtest else Trade(self.args, self.PricePrecision, self.QtyPrecision)
-        self.prepare_before_processing()
+        # self.prepare_before_processing()
     def get_precision(self):
         info = self.client.futures_exchange_info()
         for x in info["symbols"]:
@@ -115,7 +115,8 @@ class PivotStrategy():
                 "High": Info["h"],
                 "Low": Info["l"]
                 })
-            self.calculate_pivot_high_low()
+            self.trade.mock_order_trailing_sl(float(Info["h"]), float(Info["l"]))
+            # self.calculate_pivot_high_low()
     def calculate_pivot_high_low(self):
         length = len(self.Klines)
         if length >= self.MaxlenKlines:
